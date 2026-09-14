@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.ll</groupId>
+        <artifactId>hirehub</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>hirehub-api</artifactId>
+    <name>hirehub-api</name>
+    <description>服务间契约：Feign 接口 + DTO（非启动模块）</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.ll</groupId>
+            <artifactId>hirehub-common</artifactId>
+        </dependency>
+        <!-- Feign 契约：@FeignClient 注解；仅 MVC 服务依赖，Gateway 不依赖本模块 -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
+        <!-- Feign 按服务名调用（lb://）需要负载均衡 -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+        </dependency>
+    </dependencies>
+</project>

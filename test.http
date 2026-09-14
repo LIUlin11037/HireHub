@@ -1,0 +1,20 @@
+### GET request to example server
+GET https://examples.http-client.intellij.net/get
+    ?generated-in=IntelliJ IDEA
+
+# ① 注册（白名单，无需 token）
+curl -X POST http://localhost:9000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"alice","password":"123456","phone":"13800138000"}'
+
+# ② 登录（拿到 accessToken）
+curl -X POST http://localhost:9000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"alice","password":"123456"}'
+
+# ③ 查当前用户（需带 token；网关校验 JWT 后注入 X-User-Id）
+curl http://localhost:9000/api/auth/me \
+  -H "Authorization: Bearer <上一步的 accessToken>"
+
+# ④ 不带 token 访问受保护接口 → 应返回 401
+curl http://localhost:9000/api/auth/me

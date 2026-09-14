@@ -1,0 +1,48 @@
+server:
+  port: 9000
+
+spring:
+  application:
+    name: hirehub-gateway
+  cloud:
+    nacos:
+      username: nacos
+      password: "${NACOS_PASSWORD:nacos}"
+      discovery:
+        server-addr: localhost:8848
+    gateway:
+      routes:
+        - id: hirehub-auth
+          uri: lb://hirehub-auth
+          predicates:
+            - Path=/api/auth/**
+        - id: hirehub-company
+          uri: lb://hirehub-company
+          predicates:
+            - Path=/api/company/**
+        - id: hirehub-job
+          uri: lb://hirehub-job
+          predicates:
+            - Path=/api/job/**
+        - id: hirehub-resume
+          uri: lb://hirehub-resume
+          predicates:
+            - Path=/api/resume/**
+        - id: hirehub-delivery
+          uri: lb://hirehub-delivery
+          predicates:
+            - Path=/api/delivery/**
+        - id: hirehub-interview
+          uri: lb://hirehub-interview
+          predicates:
+            - Path=/api/interview/**
+        - id: hirehub-notification
+          uri: lb://hirehub-notification
+          predicates:
+            - Path=/api/notification/**
+
+# JWT secret 必须与 auth 服务一致（同一环境变量 + 同一默认值）
+hirehub:
+  jwt:
+    secret: ${HIREHUB_JWT_SECRET:hirehub-dev-secret-please-override-0123456789}
+    access-expire-seconds: 1800

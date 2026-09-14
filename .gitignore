@@ -21,3 +21,19 @@ buildNumber.properties
 .settings/
 .project
 .classpath
+
+### 日志 ###
+*.log
+logs/
+
+### 操作系统 ###
+.DS_Store
+Thumbs.db
+
+### 本地配置（AppCode / 密钥等敏感信息，见 D-18）###
+application-local.yml
+application-local.yaml
+application-local.properties
+
+### 数据目录 ###
+data/

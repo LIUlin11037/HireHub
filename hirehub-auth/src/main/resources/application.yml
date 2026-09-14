@@ -1,0 +1,31 @@
+server:
+  port: 9001
+
+spring:
+  application:
+    name: hirehub-auth
+  datasource:
+    url: jdbc:mysql://localhost:3307/hirehub_auth?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+        username: nacos
+        password: "${NACOS_PASSWORD:nacos}"
+# JWT 配置：生产用环境变量 HIREHUB_JWT_SECRET 覆盖（secret 需 ≥ 32 字节）
+hirehub:
+  jwt:
+    secret: ${HIREHUB_JWT_SECRET:hirehub-dev-secret-please-override-0123456789}
+    access-expire-seconds: 1800
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0

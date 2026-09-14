@@ -1,0 +1,61 @@
+# HireHub 一期中间件编排：MySQL / Redis / Nacos
+# 服务本身在 IDE 运行，中间件用 Docker 起
+# 端口规划见 docs/架构与实施文档.md §3.2（Nacos 3.0 控制台独立到 8080，避开网关 9000）
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: hirehub-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      TZ: Asia/Shanghai
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: hirehub-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  nacos:
+    image: nacos/nacos-server:v3.0.3
+    container_name: hirehub-nacos
+    restart: unless-stopped
+    environment:
+      MODE: standalone
+      NACOS_AUTH_ENABLE: "true"
+      JVM_XMS: 512m
+      JVM_XMX: 512m
+      JVM_XMN: 256m
+      NACOS_AUTH_TOKEN: "SecretKey012345678901234567890123456789012345678901234567890123456789"
+      NACOS_AUTH_IDENTITY_KEY: "serverIdentity"
+      NACOS_AUTH_IDENTITY_VALUE: "security"
+      NACOS_CONSOLE_LOGIN_ENABLED: "true"
+    ports:
+      - "8848:8848"    # 主端口 / HTTP API
+      - "9848:9848"    # 客户端 gRPC（必须放行）
+      - "9849:9849"    # 服务端间 gRPC
+      - "8080:8080"    # 控制台（Nacos 3.0 独立端口，不再是 8848/nacos）
+    # healthcheck 待实际运行验证后补充（Nacos 3.0 健康端点与 2.x 不同）
+
+volumes:
+  mysql-data:

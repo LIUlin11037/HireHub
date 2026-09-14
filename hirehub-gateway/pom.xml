@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.ll</groupId>
+        <artifactId>hirehub</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>hirehub-gateway</artifactId>
+    <name>hirehub-gateway</name>
+    <description>网关：路由 + 统一鉴权</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.ll</groupId>
+            <artifactId>hirehub-common</artifactId>
+        </dependency>
+        <!-- ⚠️ Spring Cloud 2025：Gateway 坐标已改名，旧 spring-cloud-starter-gateway 已废弃（架构文档 §2.2） -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-gateway-server-webflux</artifactId>
+        </dependency>
+        <!-- lb:// 服务名路由需要 -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

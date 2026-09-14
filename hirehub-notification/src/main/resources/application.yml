@@ -1,0 +1,26 @@
+server:
+  port: 9007
+
+spring:
+  application:
+    name: hirehub-notification
+  datasource:
+    url: jdbc:mysql://localhost:3307/hirehub_notification?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  cloud:
+    nacos:
+      username: nacos
+      password: "${NACOS_PASSWORD:nacos}"
+      discovery:
+        server-addr: localhost:8848
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
