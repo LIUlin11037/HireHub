@@ -37,6 +37,8 @@
 
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
         <springdoc.version>2.9.1</springdoc.version>
+        <!-- 与 Spring Boot 3.5.0 管理的版本保持一致；显式声明是为了在注解处理器路径里引用 -->
+        <lombok.version>1.18.38</lombok.version>
     </properties>
 
     <dependencyManagement>
@@ -117,8 +119,52 @@
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
                     <version>${spring-boot.version}</version>
+                    <!--
+                      未继承 spring-boot-starter-parent 时，repackage 不会自动绑定到 package 阶段，
+                      必须显式声明，否则 mvn package 出的是普通 jar，java -jar 报「没有主清单属性」。
+                    -->
+                    <executions>
+                        <execution>
+                            <id>repackage</id>
+                            <goals>
+                                <goal>repackage</goal>
+                            </goals>
+                        </execution>
+                    </executions>
                 </plugin>
             </plugins>
         </pluginManagement>
+
+        <plugins>
+            <!--
+              ★ 必须显式开启 -parameters：
+              Spring Framework 6.1 起移除了 LocalVariableTableParameterNameDiscoverer，
+              @PathVariable / @RequestParam 未显式写名字时只能靠编译期保留的参数名（-parameters）解析；
+              缺了它，所有 /api/xxx/{id} 与 /internal 接口会在运行时抛
+              "Name for argument of type [...] not specified"，被 GlobalExceptionHandler 兜底成 10002。
+              本项目未继承 spring-boot-starter-parent，所以该开关不会自动生效，必须手写。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <parameters>true</parameters>
+                    <!--
+                      Lombok + 增量编译有坑：Maven 只把「变更过的源文件」交给 javac，
+                      被 javac 隐式编译的其它源文件不会经过注解处理器，于是 @Data/@Slf4j
+                      生成的方法全部「找不到符号」。关掉增量编译，保证整模块全量处理。
+                    -->
+                    <useIncrementalCompilation>false</useIncrementalCompilation>
+                    <!-- 显式声明注解处理器，避免依赖「classpath 上碰巧有 Lombok」的隐式行为 -->
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+        </plugins>
     </build>
 </project>

@@ -22,7 +22,10 @@ public enum ResultCode {
     // 认证 20xxx
     UNAUTHORIZED(20001, "未登录或登录已过期"),
     TOKEN_INVALID(20002, "凭证无效"),
-    FORBIDDEN(20003, "无权限");
+    FORBIDDEN(20003, "无权限"),
+
+    // 业务 30xxx
+    BUSINESS_ERROR(30001, "业务校验未通过");
 
     private final int code;
     private final String message;
