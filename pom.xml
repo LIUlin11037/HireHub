@@ -37,6 +37,7 @@
 
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
         <springdoc.version>2.9.1</springdoc.version>
+        <micrometer-tracing.version>1.5.0</micrometer-tracing.version>
         <!-- 与 Spring Boot 3.5.0 管理的版本保持一致；显式声明是为了在注解处理器路径里引用 -->
         <lombok.version>1.18.38</lombok.version>
     </properties>
@@ -83,6 +84,14 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <!-- Micrometer Tracing BOM：spring-boot-dependencies 不直接管理 bridge-brave，需显式导入（§8.4） -->
+            <dependency>
+                <groupId>io.micrometer</groupId>
+                <artifactId>micrometer-tracing-bom</artifactId>
+                <version>${micrometer-tracing.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
 
             <!-- 内部模块 -->
             <dependency>
@@ -97,6 +106,18 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
+
+    <!--
+      Maven Central 直连回退：settings.xml 里 aliyun 镜像只 mirrorOf=central，
+      这里用不同的 id（central-direct）就不会被镜像接管。
+      阿里云 public 镜像缺 io.micrometer.tracing 等少数坐标，用它兜底。
+    -->
+    <repositories>
+        <repository>
+            <id>central-direct</id>
+            <url>https://repo.maven.apache.org/maven2</url>
+        </repository>
+    </repositories>
 
     <!-- 全局依赖：所有模块继承；Lombok optional 不传递，但每个模块自身可用 -->
     <dependencies>
@@ -147,6 +168,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
                 <configuration>
                     <parameters>true</parameters>
                     <!--

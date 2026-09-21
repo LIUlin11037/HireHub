@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 /**
  * 内部接口（服务间 Feign 调用，不走网关，/internal 前缀与 /api 隔离）
  */
@@ -39,6 +41,15 @@ public class CompanyInternalController {
         dto.setRole(m.getRole());
         dto.setStatus(m.getStatus());
         return Result.ok(dto);
+    }
+
+    /** 企业在职成员的用户 ID 列表（投递状态变更要通知「所有 HR」，见 §6.2 通知映射） */
+    @GetMapping("/member-ids")
+    public Result<List<Long>> listMemberUserIds(@RequestParam Long companyId) {
+        List<CompanyMember> members = memberMapper.selectList(new LambdaQueryWrapper<CompanyMember>()
+                .eq(CompanyMember::getCompanyId, companyId)
+                .eq(CompanyMember::getStatus, 1));
+        return Result.ok(members.stream().map(CompanyMember::getUserId).distinct().toList());
     }
 
     @GetMapping("/{id}/verify-status")

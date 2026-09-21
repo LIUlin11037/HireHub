@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 /**
  * job 服务内部契约
  */
-@FeignClient(name = "hirehub-job")
+@FeignClient(name = "hirehub-job", fallbackFactory = FeignFallbacks.JobClientFallbackFactory.class)
 public interface JobClient {
 
     @GetMapping("/internal/{id}")

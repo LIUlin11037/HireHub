@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 /**
  * auth 服务内部契约
  */
-@FeignClient(name = "hirehub-auth")
+@FeignClient(name = "hirehub-auth", fallbackFactory = FeignFallbacks.AuthClientFallbackFactory.class)
 public interface AuthClient {
 
     /** 查用户实名状态（0 未认证 / 1 已认证 / 2 驳回） */

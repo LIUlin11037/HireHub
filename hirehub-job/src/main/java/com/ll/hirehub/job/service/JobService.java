@@ -6,6 +6,8 @@ import com.ll.hirehub.api.dto.CompanyMemberDTO;
 import com.ll.hirehub.common.exception.BusinessException;
 import com.ll.hirehub.common.result.ResultCode;
 import com.ll.hirehub.job.dto.CreateJobRequest;
+import com.ll.hirehub.job.cache.BloomFilter;
+import com.ll.hirehub.job.cache.JobCacheService;
 import com.ll.hirehub.job.entity.Job;
 import com.ll.hirehub.job.mapper.JobMapper;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +23,8 @@ public class JobService {
     private final JobMapper jobMapper;
     private final CompanyClient companyClient;
     private final AuthClient authClient;
+    private final JobCacheService jobCacheService;
+    private final BloomFilter bloomFilter;
 
     /** 创建职位草稿（需归属正常，见 §7） */
     @Transactional(rollbackFor = Exception.class)
@@ -51,6 +55,7 @@ public class JobService {
         job.setDeliveryCount(0);
         job.setViewCount(0);
         jobMapper.insert(job);
+        bloomFilter.add(job.getId());   // 新职位同步进布隆，保证 mightContain 不漏报
         return job.getId();
     }
 
@@ -78,6 +83,7 @@ public class JobService {
         job.setStatus(1); // 招聘中
         job.setPublishTime(LocalDateTime.now());
         jobMapper.updateById(job);
+        jobCacheService.evict(jobId);
     }
 
     /** 下线职位（HR 主动，见 §7） */
@@ -91,6 +97,7 @@ public class JobService {
         job.setStatus(2); // 已下线
         job.setOfflineReason("手动");
         jobMapper.updateById(job);
+        jobCacheService.evict(jobId);
     }
 
     /** 删除职位：仅 OWNER（见 D-21） */
@@ -102,10 +109,16 @@ public class JobService {
             throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "仅企业 OWNER 可删除职位");
         }
         jobMapper.deleteById(jobId); // 逻辑删除
+        jobCacheService.evict(jobId);
     }
 
+    /** 对外读走缓存（缓存三防）；内部 Feign 读仍走 DB，见 JobCacheService 注释 */
     public Job get(Long jobId) {
-        return requireJob(jobId);
+        Job cached = jobCacheService.getCached(jobId);
+        if (cached != null) {
+            return cached;
+        }
+        throw new BusinessException(ResultCode.NOT_FOUND);
     }
 
     private CompanyMemberDTO requireMembership(Long companyId, Long userId) {

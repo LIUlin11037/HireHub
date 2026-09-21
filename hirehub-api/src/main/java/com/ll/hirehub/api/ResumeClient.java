@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 /**
  * resume 服务内部契约
  */
-@FeignClient(name = "hirehub-resume")
+@FeignClient(name = "hirehub-resume", fallbackFactory = FeignFallbacks.ResumeClientFallbackFactory.class)
 public interface ResumeClient {
 
     @GetMapping("/internal/{id}")

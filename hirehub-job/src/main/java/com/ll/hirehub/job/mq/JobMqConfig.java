@@ -1,0 +1,44 @@
+package com.ll.hirehub.job.mq;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ll.hirehub.common.mq.MqConst;
+import org.springframework.amqp.core.Binding;
+import org.springframework.amqp.core.BindingBuilder;
+import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.QueueBuilder;
+import org.springframework.amqp.core.TopicExchange;
+import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+/**
+ * job 侧 MQ 拓扑（消费者）。
+ * <p>
+ * 队列由消费方声明并绑定自己关心的路由键——生产者只发「发生了什么」，
+ * 不关心谁在听（见 {@link MqConst}）。
+ */
+@Configuration
+public class JobMqConfig {
+
+    @Bean
+    public TopicExchange hirehubExchange() {
+        return new TopicExchange(MqConst.EXCHANGE, true, false);
+    }
+
+    /** 只关心「投递创建」——职位投递数 +1 */
+    @Bean
+    public Queue jobDeliveryQueue() {
+        return QueueBuilder.durable(MqConst.QUEUE_JOB_DELIVERY).build();
+    }
+
+    @Bean
+    public Binding jobDeliveryBinding(Queue jobDeliveryQueue, TopicExchange hirehubExchange) {
+        return BindingBuilder.bind(jobDeliveryQueue).to(hirehubExchange).with(MqConst.RK_DELIVERY_CREATED);
+    }
+
+    @Bean
+    public MessageConverter jacksonMessageConverter(ObjectMapper objectMapper) {
+        return new Jackson2JsonMessageConverter(objectMapper);
+    }
+}

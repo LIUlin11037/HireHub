@@ -15,6 +15,16 @@ spring:
       password: "${NACOS_PASSWORD:nacos}"
       discovery:
         server-addr: localhost:8848
+  # 二期：消费投递域消息生成站内通知（见架构文档 §6.4）
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    listener:
+      simple:
+        acknowledge-mode: manual   # 处理成功才 ACK，配合 mq_consume_log 幂等
+        prefetch: 10
 
 mybatis-plus:
   configuration:
@@ -24,3 +34,12 @@ mybatis-plus:
       logic-delete-field: deleted
       logic-delete-value: 1
       logic-not-delete-value: 0
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0   # 开发期全采样，生产按需调低
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}] %-15.15t %-40.40logger{39} : %m%n%wEx"
