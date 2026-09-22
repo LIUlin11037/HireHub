@@ -10,7 +10,9 @@ import com.ll.hirehub.job.cache.BloomFilter;
 import com.ll.hirehub.job.cache.JobCacheService;
 import com.ll.hirehub.job.entity.Job;
 import com.ll.hirehub.job.mapper.JobMapper;
+import com.ll.hirehub.job.search.JobSyncEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +27,7 @@ public class JobService {
     private final AuthClient authClient;
     private final JobCacheService jobCacheService;
     private final BloomFilter bloomFilter;
+    private final ApplicationEventPublisher eventPublisher;
 
     /** 创建职位草稿（需归属正常，见 §7） */
     @Transactional(rollbackFor = Exception.class)
@@ -84,6 +87,7 @@ public class JobService {
         job.setPublishTime(LocalDateTime.now());
         jobMapper.updateById(job);
         jobCacheService.evict(jobId);
+        eventPublisher.publishEvent(new JobSyncEvent(jobId, false));   // 同步 job_index
     }
 
     /** 下线职位（HR 主动，见 §7） */
@@ -98,6 +102,7 @@ public class JobService {
         job.setOfflineReason("手动");
         jobMapper.updateById(job);
         jobCacheService.evict(jobId);
+        eventPublisher.publishEvent(new JobSyncEvent(jobId, false));   // 状态变化 → 同步索引（status=2 会被搜索过滤掉）
     }
 
     /** 删除职位：仅 OWNER（见 D-21） */
@@ -110,6 +115,7 @@ public class JobService {
         }
         jobMapper.deleteById(jobId); // 逻辑删除
         jobCacheService.evict(jobId);
+        eventPublisher.publishEvent(new JobSyncEvent(jobId, true));    // 从 job_index 移除
     }
 
     /** 对外读走缓存（缓存三防）；内部 Feign 读仍走 DB，见 JobCacheService 注释 */

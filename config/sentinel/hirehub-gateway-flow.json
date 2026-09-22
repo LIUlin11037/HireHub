@@ -1,10 +1,10 @@
 [
   {
     "resource": "hirehub-auth",
+    "resourceMode": 0,
     "grade": 1,
     "count": 5,
-    "limitApp": "default",
-    "strategy": 0,
+    "intervalSec": 1,
     "controlBehavior": 0
   }
 ]

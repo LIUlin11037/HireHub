@@ -59,4 +59,10 @@ public final class MqPayload {
         private String consumer;
         private boolean success;
     }
+
+    /** 职位 ES 同步：job.upsert / job.delete 的负载 */
+    @Data
+    public static class JobSync implements Serializable {
+        private Long jobId;
+    }
 }

@@ -27,11 +27,16 @@ public final class MqConst {
     public static final String RK_DELIVERY_CREATED = "delivery.created";
     public static final String RK_DELIVERY_EVENT = "delivery.event";
     public static final String RK_CONSUME_ACK = "consume.ack";
+    /** 二期：职位变更 → ES 同步（见 §6.3） */
+    public static final String RK_JOB_UPSERT = "job.upsert";
+    public static final String RK_JOB_DELETE = "job.delete";
 
     // ---------- 队列 ----------
     public static final String QUEUE_JOB_DELIVERY = "hirehub.job.delivery";
     public static final String QUEUE_NOTIFICATION = "hirehub.notification.msg";
     public static final String QUEUE_DELIVERY_ACK = "hirehub.delivery.ack";
+    /** 二期：职位 ES 同步队列（job 服务自消费，写 job_index） */
+    public static final String QUEUE_JOB_SEARCH = "hirehub.job.search";
 
     /** 业务类型 */
     public static final class BizType {
@@ -44,6 +49,10 @@ public final class MqConst {
         public static final String DELIVERY_EVENT = "DELIVERY_EVENT";
         /** 消费回执（消费者 → delivery 的状态回写） */
         public static final String CONSUME_ACK = "CONSUME_ACK";
+        /** 职位新增/变更 → 同步 job_index */
+        public static final String JOB_UPSERT = "JOB_UPSERT";
+        /** 职位删除 → 从 job_index 移除 */
+        public static final String JOB_DELETE = "JOB_DELETE";
     }
 
     /** 消费者标识，写进 mq_consume_log 便于排查 */
@@ -53,5 +62,7 @@ public final class MqConst {
 
         public static final String JOB_DELIVERY_COUNT = "job-delivery-count";
         public static final String NOTIFICATION = "notification";
+        /** 职位 ES 同步消费者 */
+        public static final String JOB_SEARCH = "job-search";
     }
 }

@@ -1,7 +1,17 @@
 # HireHub 项目上下文（会话压缩版）
 
 > 用途：新会话喂这一个文件即可恢复上下文，替代长对话历史。
-> 生成时点：第一期代码全部写完 + 运行时问题修复后。
+> 生成时点：二期建设中（一期端到端全绿；二期已完成投递最终一致性/通知/幂等/缓存三防/springdoc/tracing/sentinel，ES/MinIO/三层核验/Docker 化进行中）。
+
+## ⚠️ 新会话必读（最高优先级）
+
+1. **动手前必须先通读两份文档**（硬性要求，不要只靠本文件）：
+   - `docs/关键决策记录.md`：28 条 ADR + 待定事项 Q-01~Q-09。**已定的照做；待定的不得擅自决定，必须先和用户讨论。**
+   - `docs/架构与实施文档.md`：分期计划、链路设计、接口清单、版本约束。
+2. **踩坑先查** `docs/踩坑记录.md`——里面是反复踩过的坑和最终解法，别重复踩。
+3. **文档纪律（强制）**：
+   - 产生**重大决策** → 必须新增 ADR 到 `docs/关键决策记录.md`；
+   - 架构 / 实现有变化 → **实时同步** `docs/架构与实施文档.md`。
 
 ---
 
@@ -22,7 +32,7 @@
 | Nacos | 3.0.3（**已开启鉴权**） |
 | MyBatis-Plus | 3.5.17 + 单独引 `mybatis-plus-jsqlparser`（3.5.9+ 拆包） |
 | MySQL / Redis | 8.0 / 7 |
-| 二期待引入 | RabbitMQ、Elasticsearch、Sentinel 1.8.9、MinIO、springdoc 2.9.1、Micrometer Tracing |
+| 二期（已引入） | RabbitMQ、Elasticsearch 8.14.3、Sentinel 1.8.9、MinIO、springdoc **2.8.17**（Swagger UI 走 webjar 自托管，见踩坑记录）、Micrometer Tracing |
 
 **求新路线踩坑（已处理）**：Gateway 坐标改名 → `spring-cloud-starter-gateway-server-webflux`；springdoc 必须用 2.x（3.x 给 Boot 4）；全线 `jakarta.*`。
 
@@ -109,12 +119,12 @@ SQL：`sql/init-databases.sql` + 7 个 `*-schema.sql`
 
 ## 八、当前状态与下一步
 
-**已完成**：第一期代码全部写完（139 文件），文档 `docs/第一期运行指南.md`、`docs/端到端验证.md`。
+**一期（已完成）**：端到端验证 49~50/50 全绿；文档 `docs/第一期运行指南.md`、`docs/端到端验证.md`、`docs/端到端验证报告.md`。
 
-**未完成 / 未验证**：
-- ❌ `mvn compile` **从未执行过**（沙箱限制），编译错误未知
-- ❌ 端到端未跑通
+**二期（已完成）**：本地消息表 + MQ 投递最终一致性、通知打通、幂等（SETNX + MQ 消费去重）、Redis 缓存三防 + 布隆过滤器、springdoc（webjar 自托管 Swagger UI）、Micrometer Tracing、Sentinel（Feign 降级 + 网关限流）、docker-compose 补 ES/MinIO。
 
-**下一步**：本地 `mvn compile` → 修编译错 → 起服务 → 按 `docs/端到端验证.md` 跑全流程。
+**二期（未完成）**：ES+IK 搜索、MinIO 简历上传、三层核验（D-24）、全部服务 Docker 化。
 
-**已知风险**：Nacos 默认凭据 `nacos/nacos` 若不对（3.0 可能改过），所有服务鉴权会 403。
+**一期已决策但代码未落地（待补）**：D-02 双 token、D-06 `/me/identities`、D-07 `@PreAuthorize` + 更多管理端接口 + `sys_operation_log`、D-23 求职者隐私模型。
+
+**下一步**：ES+IK 搜索 → MinIO → 三层核验 → Docker 化（按关键决策记录 + 架构文档执行）。

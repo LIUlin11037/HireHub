@@ -36,7 +36,8 @@
         <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
 
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
-        <springdoc.version>2.9.1</springdoc.version>
+        <!-- 2.8.17：2.9.x 在 Boot3.5 下 Swagger UI 资源映射崩溃（/swagger-ui/**/*index.html），回退到修好该问题的 2.8.x 末版 -->
+        <springdoc.version>2.8.17</springdoc.version>
         <micrometer-tracing.version>1.5.0</micrometer-tracing.version>
         <!-- 与 Spring Boot 3.5.0 管理的版本保持一致；显式声明是为了在注解处理器路径里引用 -->
         <lombok.version>1.18.38</lombok.version>

@@ -49,6 +49,14 @@
             <artifactId>sentinel-datasource-nacos</artifactId>
             <version>1.8.9</version>
         </dependency>
+        <!-- 二期：Spring Cloud Gateway 路由级限流适配器。
+             SCA 的 sentinel starter 不含它（依赖树里只有 webflux-adapter），
+             缺了它路由限流根本不生效——实测 30 次/11QPS 全部放行后补上。 -->
+        <dependency>
+            <groupId>com.alibaba.csp</groupId>
+            <artifactId>sentinel-spring-cloud-gateway-adapter</artifactId>
+            <version>1.8.9</version>
+        </dependency>
     </dependencies>
 
     <build>

@@ -53,7 +53,8 @@ spring:
             password: "${NACOS_PASSWORD:nacos}"
             data-id: hirehub-gateway-flow
             group-id: DEFAULT_GROUP
-            rule-type: flow
+            # 网关用 GatewayFlowRule（gw-flow）；写成 flow 规则进的是普通 FlowRule，对路由不生效
+            rule-type: gw-flow
 
 # JWT secret 必须与 auth 服务一致（同一环境变量 + 同一默认值）
 hirehub:

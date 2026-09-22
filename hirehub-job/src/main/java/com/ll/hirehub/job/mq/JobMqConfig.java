@@ -37,6 +37,22 @@ public class JobMqConfig {
         return BindingBuilder.bind(jobDeliveryQueue).to(hirehubExchange).with(MqConst.RK_DELIVERY_CREATED);
     }
 
+    /** 职位变更 → 写 job_index（本服务自消费，见 §6.3） */
+    @Bean
+    public Queue jobSearchQueue() {
+        return QueueBuilder.durable(MqConst.QUEUE_JOB_SEARCH).build();
+    }
+
+    @Bean
+    public Binding jobSearchUpsertBinding(Queue jobSearchQueue, TopicExchange hirehubExchange) {
+        return BindingBuilder.bind(jobSearchQueue).to(hirehubExchange).with(MqConst.RK_JOB_UPSERT);
+    }
+
+    @Bean
+    public Binding jobSearchDeleteBinding(Queue jobSearchQueue, TopicExchange hirehubExchange) {
+        return BindingBuilder.bind(jobSearchQueue).to(hirehubExchange).with(MqConst.RK_JOB_DELETE);
+    }
+
     @Bean
     public MessageConverter jacksonMessageConverter(ObjectMapper objectMapper) {
         return new Jackson2JsonMessageConverter(objectMapper);
