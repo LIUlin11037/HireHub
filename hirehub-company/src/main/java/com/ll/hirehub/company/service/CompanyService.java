@@ -13,8 +13,10 @@ import com.ll.hirehub.company.entity.CompanyVerifyRecord;
 import com.ll.hirehub.company.mapper.CompanyMapper;
 import com.ll.hirehub.company.mapper.CompanyMemberMapper;
 import com.ll.hirehub.company.mapper.CompanyVerifyRecordMapper;
+import com.ll.hirehub.company.search.CompanySyncEvent;
 import com.ll.hirehub.company.util.CreditCodeUtil;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +32,7 @@ public class CompanyService {
     private final CompanyMemberMapper memberMapper;
     private final CompanyVerifyRecordMapper recordMapper;
     private final CompanyVerifier companyVerifier;
+    private final ApplicationEventPublisher eventPublisher;
 
     /** 创建企业（创建者自动成为 OWNER，见 D-14 / §6.7） */
     @Transactional(rollbackFor = Exception.class)
@@ -61,6 +64,7 @@ public class CompanyService {
         member.setIsLegalRep(0);
         member.setStatus(1);
         memberMapper.insert(member);
+        eventPublisher.publishEvent(new CompanySyncEvent(company.getId()));   // 同步 company_index
         return company.getId();
     }
 
@@ -123,6 +127,7 @@ public class CompanyService {
         record.setResult(Boolean.TRUE.equals(req.getApprove()) ? "通过" : "驳回");
         record.setRemark(req.getRemark());
         recordMapper.insert(record);
+        eventPublisher.publishEvent(new CompanySyncEvent(companyId));   // 认证状态变化 → 同步 company_index
     }
 
     /** 生成 / 重置邀请码（仅 OWNER，见 D-19） */

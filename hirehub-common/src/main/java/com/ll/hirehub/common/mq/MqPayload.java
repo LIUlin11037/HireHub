@@ -65,4 +65,10 @@ public final class MqPayload {
     public static class JobSync implements Serializable {
         private Long jobId;
     }
+
+    /** 企业 ES 同步：company.upsert 的负载 */
+    @Data
+    public static class CompanySync implements Serializable {
+        private Long companyId;
+    }
 }

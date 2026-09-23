@@ -1,6 +1,11 @@
 server:
   port: 9002
 
+hirehub:
+  es:
+    host: localhost
+    port: 9200
+
 spring:
   application:
     name: hirehub-company
@@ -15,6 +20,16 @@ spring:
       password: "${NACOS_PASSWORD:nacos}"
       discovery:
         server-addr: localhost:8848
+  # 二期：企业变更 → MQ → ES 同步（见 §6.3）
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 10
 
 mybatis-plus:
   configuration:

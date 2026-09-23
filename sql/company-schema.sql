@@ -55,3 +55,12 @@ CREATE TABLE IF NOT EXISTS company_verify_record (
     create_time       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_company (company_id, create_time)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+-- MQ 消费幂等日志（二期）：唯一索引兜底「至少一次投递」导致的重复消费
+CREATE TABLE IF NOT EXISTS mq_consume_log (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    message_id  VARCHAR(64) NOT NULL,
+    consumer    VARCHAR(64) NOT NULL,
+    create_time DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_message_consumer (message_id, consumer)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;

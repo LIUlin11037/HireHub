@@ -30,6 +30,8 @@ public final class MqConst {
     /** 二期：职位变更 → ES 同步（见 §6.3） */
     public static final String RK_JOB_UPSERT = "job.upsert";
     public static final String RK_JOB_DELETE = "job.delete";
+    /** 二期：企业变更 → ES 同步（见 §6.3） */
+    public static final String RK_COMPANY_UPSERT = "company.upsert";
 
     // ---------- 队列 ----------
     public static final String QUEUE_JOB_DELIVERY = "hirehub.job.delivery";
@@ -37,6 +39,8 @@ public final class MqConst {
     public static final String QUEUE_DELIVERY_ACK = "hirehub.delivery.ack";
     /** 二期：职位 ES 同步队列（job 服务自消费，写 job_index） */
     public static final String QUEUE_JOB_SEARCH = "hirehub.job.search";
+    /** 二期：企业 ES 同步队列（company 服务自消费，写 company_index） */
+    public static final String QUEUE_COMPANY_SEARCH = "hirehub.company.search";
 
     /** 业务类型 */
     public static final class BizType {
@@ -53,6 +57,8 @@ public final class MqConst {
         public static final String JOB_UPSERT = "JOB_UPSERT";
         /** 职位删除 → 从 job_index 移除 */
         public static final String JOB_DELETE = "JOB_DELETE";
+        /** 企业新增/变更 → 同步 company_index */
+        public static final String COMPANY_UPSERT = "COMPANY_UPSERT";
     }
 
     /** 消费者标识，写进 mq_consume_log 便于排查 */
@@ -64,5 +70,7 @@ public final class MqConst {
         public static final String NOTIFICATION = "notification";
         /** 职位 ES 同步消费者 */
         public static final String JOB_SEARCH = "job-search";
+        /** 企业 ES 同步消费者 */
+        public static final String COMPANY_SEARCH = "company-search";
     }
 }
