@@ -34,6 +34,10 @@ public final class MqConst {
     public static final String RK_COMPANY_UPSERT = "company.upsert";
     /** 三期：简历附件已上传 → 异步解析（见 Q-03） */
     public static final String RK_RESUME_PARSE = "resume.parse";
+    /** 三期：面试提醒死信路由键（延迟队列 TTL 到期经 DLX 投递，只有 interview 服务消费） */
+    public static final String RK_INTERVIEW_REMIND = "interview.remind";
+    /** 三期：面试提醒 → 站内通知（interview 校验后转发，notification 服务消费） */
+    public static final String RK_INTERVIEW_REMIND_NOTIFY = "interview.remind.notify";
 
     // ---------- 队列 ----------
     public static final String QUEUE_JOB_DELIVERY = "hirehub.job.delivery";
@@ -45,6 +49,10 @@ public final class MqConst {
     public static final String QUEUE_COMPANY_SEARCH = "hirehub.company.search";
     /** 三期：简历解析队列（resume 服务自消费，PDFBox/POI → 结构化 + resume_index） */
     public static final String QUEUE_RESUME_PARSE = "hirehub.resume.parse";
+    /** 三期：面试提醒延迟队列（**无消费者**，消息 TTL 到期后进 DLX，见 D-32） */
+    public static final String QUEUE_INTERVIEW_REMIND_DELAY = "hirehub.interview.remind.delay";
+    /** 三期：面试提醒消费队列（interview 服务自消费，校验面试仍有效后转发通知） */
+    public static final String QUEUE_INTERVIEW_REMIND = "hirehub.interview.remind";
 
     /** 业务类型 */
     public static final class BizType {
@@ -65,6 +73,8 @@ public final class MqConst {
         public static final String COMPANY_UPSERT = "COMPANY_UPSERT";
         /** 简历附件已上传 → 触发解析 */
         public static final String RESUME_PARSE = "RESUME_PARSE";
+        /** 面试提醒（延迟消息到期 / 兜底扫描 → 站内通知） */
+        public static final String INTERVIEW_REMIND = "INTERVIEW_REMIND";
     }
 
     /** 消费者标识，写进 mq_consume_log 便于排查 */
@@ -80,5 +90,7 @@ public final class MqConst {
         public static final String COMPANY_SEARCH = "company-search";
         /** 简历解析消费者 */
         public static final String RESUME_PARSE = "resume-parse";
+        /** 面试提醒消费者 */
+        public static final String INTERVIEW_REMIND = "interview-remind";
     }
 }

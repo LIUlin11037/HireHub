@@ -17,6 +17,7 @@ import com.ll.hirehub.interview.enums.InterviewEvent;
 import com.ll.hirehub.interview.enums.InterviewStatus;
 import com.ll.hirehub.interview.mapper.InterviewFeedbackMapper;
 import com.ll.hirehub.interview.mapper.InterviewMapper;
+import com.ll.hirehub.interview.mq.InterviewReminderService;
 import com.ll.hirehub.interview.statemachine.InterviewStateMachine;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,7 @@ public class InterviewService {
     private final InterviewStateMachine stateMachine;
     private final DeliveryClient deliveryClient;
     private final CompanyClient companyClient;
+    private final InterviewReminderService reminderService;
 
     /** HR 发起面试邀约（见 §7 / D-28） */
     @Transactional(rollbackFor = Exception.class)
@@ -58,6 +60,9 @@ public class InterviewService {
         iv.setInterviewerName(req.getInterviewerName());
         iv.setStatus(InterviewStatus.SCHEDULED.name());
         interviewMapper.insert(iv);
+        // 排布「面试前 1 天 / 30 分钟」两档提醒（见 D-32）。
+        // 放在同一事务里：提醒行与面试一起提交，回滚则两样都没有，不会发出幽灵提醒。
+        reminderService.schedule(iv);
         return iv.getId();
     }
 
@@ -83,6 +88,7 @@ public class InterviewService {
     public void reject(Long userId, Long interviewId) {
         Interview iv = requireInterview(interviewId);
         transition(iv, InterviewEvent.REJECT, determineActor(userId, iv));
+        reminderService.cancel(interviewId);   // 求职者已拒绝，不再提醒
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -93,6 +99,7 @@ public class InterviewService {
         iv.setCancelledBy(actor);
         iv.setCancelReason(req.getReason());
         interviewMapper.updateById(iv);
+        reminderService.cancel(interviewId);   // 取消失败也不该继续提醒
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -102,6 +109,8 @@ public class InterviewService {
         transition(iv, InterviewEvent.RESCHEDULE, actor);
         iv.setInterviewTime(req.getInterviewTime());
         interviewMapper.updateById(iv);
+        // 改期后重新排布：内部会换 token，令"改期前投出的旧延迟消息"到期即被丢弃
+        reminderService.schedule(iv);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -114,6 +123,7 @@ public class InterviewService {
         fb.setResult(req.getResult());
         fb.setComment(req.getComment());
         feedbackMapper.insert(fb);
+        reminderService.cancel(interviewId);   // 面试已完成，之前的提醒不再有意义
     }
 
     private void transition(Interview iv, InterviewEvent event, String actor) {

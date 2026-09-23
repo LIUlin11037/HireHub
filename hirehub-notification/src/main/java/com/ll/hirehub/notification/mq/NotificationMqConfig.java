@@ -41,6 +41,20 @@ public class NotificationMqConfig {
         return BindingBuilder.bind(notificationQueue).to(hirehubExchange).with(MqConst.RK_DELIVERY_EVENT);
     }
 
+    /**
+     * 三期：面试提醒 → 站内通知（见 D-32）。
+     * <p>
+     * 注意绑定的是 {@code interview.remind.notify} 而<b>不是</b> {@code interview.remind}：
+     * 后者是延迟队列的死信路由键，只有 interview 服务的消费队列该听——
+     * 若这里也绑上，一条延迟消息会被两个队列同时消费，面试提醒就会重复落两次。
+     */
+    @Bean
+    public Binding notificationInterviewRemindBinding(Queue notificationQueue,
+                                                     TopicExchange hirehubExchange) {
+        return BindingBuilder.bind(notificationQueue).to(hirehubExchange)
+                .with(MqConst.RK_INTERVIEW_REMIND_NOTIFY);
+    }
+
     @Bean
     public MessageConverter jacksonMessageConverter(ObjectMapper objectMapper) {
         return new Jackson2JsonMessageConverter(objectMapper);

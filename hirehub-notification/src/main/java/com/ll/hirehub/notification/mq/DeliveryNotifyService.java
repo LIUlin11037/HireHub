@@ -49,6 +49,8 @@ public class DeliveryNotifyService {
             handleDeliveryCreated(message);
         } else if (MqConst.BizType.DELIVERY_EVENT.equals(message.getBizType())) {
             handleDeliveryEvent(message);
+        } else if (MqConst.BizType.INTERVIEW_REMIND.equals(message.getBizType())) {
+            handleInterviewRemind(message);
         } else {
             log.warn("未知消息类型，跳过: {}", message.getBizType());
         }
@@ -106,6 +108,23 @@ public class DeliveryNotifyService {
                 String.format("职位「%s」：%s → %s", safe(payload.getJobTitle()),
                         safe(payload.getFromStatus()), safe(payload.getToStatus())),
                 receivers);
+    }
+
+    /**
+     * 面试提醒 → 站内通知（见 D-32）。
+     * 文案已由 interview 服务生成好（它掌握面试时间与编号），这里只落库分发——
+     * 不在这里拼文案，是为了不让 notification 反向依赖 interview 的字段结构。
+     */
+    private void handleInterviewRemind(MqMessage message) throws JsonProcessingException {
+        MqPayload.InterviewRemind payload =
+                objectMapper.readValue(message.getPayload(), MqPayload.InterviewRemind.class);
+        List<Long> receivers = payload.getReceiverIds() == null
+                ? Collections.emptyList() : payload.getReceiverIds();
+        if (receivers.isEmpty()) {
+            return;
+        }
+        notificationService.createInternal("INTERVIEW_REMIND", "面试提醒",
+                safe(payload.getContent()), receivers);
     }
 
     private String safe(String s) {

@@ -15,6 +15,16 @@ spring:
       password: "${NACOS_PASSWORD:nacos}"
       discovery:
         server-addr: localhost:8848
+  # 三期：面试提醒延迟消息（见 D-32）
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    listener:
+      simple:
+        acknowledge-mode: manual   # 处理成功才 ACK，配合 interview_reminder 状态机幂等
+        prefetch: 10
 
 mybatis-plus:
   configuration:

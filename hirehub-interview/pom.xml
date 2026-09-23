@@ -39,6 +39,11 @@
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-jsqlparser</artifactId>
         </dependency>
+        <!-- 三期：面试提醒延迟消息（TTL + DLX → 站内通知，见 D-32） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>
@@ -53,6 +58,13 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-tracing-bridge-brave</artifactId>
+        </dependency>
+        <!-- 三期修正：tracing 的自动配置（BraveAutoConfiguration）位于
+             spring-boot-actuator-autoconfigure，只引 bridge 不会创建 Tracer bean，
+             traceId 全链路实际是断的（见踩坑记录 #19）。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
         <!-- 二期：Sentinel 限流降级（见 §8.3） -->
         <dependency>

@@ -76,6 +76,13 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-tracing-bridge-brave</artifactId>
         </dependency>
+        <!-- 三期修正：tracing 的自动配置（BraveAutoConfiguration）位于
+             spring-boot-actuator-autoconfigure，只引 bridge 不会创建 Tracer bean，
+             traceId 全链路实际是断的（见踩坑记录 #19）。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
         <!-- Swagger UI 纯静态资源（绕开 springdoc 在 Boot3.5 下崩溃的内置资源映射，走 Boot 自带的 /webjars/**） -->
         <dependency>
             <groupId>org.webjars</groupId>

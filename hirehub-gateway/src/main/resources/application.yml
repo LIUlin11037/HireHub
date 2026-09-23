@@ -45,6 +45,12 @@ spring:
           uri: lb://hirehub-notification
           predicates:
             - Path=/api/notification/**
+        # 三期：WebSocket 站内消息（见 D-34）。
+        # uri 必须用 ws://（不是 http://），网关才会按 WebSocket 协议做升级转发。
+        - id: hirehub-notification-ws
+          uri: lb:ws://hirehub-notification
+          predicates:
+            - Path=/ws/**
     # 二期：Sentinel 入口限流（见 §8.3）
     sentinel:
       eager: true                       # 启动即初始化，避免懒加载导致规则不生效

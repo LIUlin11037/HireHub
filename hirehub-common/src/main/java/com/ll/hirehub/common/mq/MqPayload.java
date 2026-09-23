@@ -85,4 +85,31 @@ public final class MqPayload {
         private Long userId;
         private String objectKey;
     }
+
+    /**
+     * 面试提醒：{@code interview.remind} / {@code interview.remind.notify} 的负载（见 D-32）。
+     * <p>
+     * 文案由 interview 服务生成好再放进来——它掌握面试的完整信息；
+     * notification 只负责「落库 + 分发给接收人」，不反向依赖 interview 的字段，
+     * 免得为了拼一句提醒文案把 interview 的实体结构扩散到通知服务。
+     */
+    @Data
+    public static class InterviewRemind implements Serializable {
+        private Long interviewId;
+        private Long seekerId;
+
+        /** 提前量档位：1D / 30M */
+        private String tier;
+
+        /**
+         * 排布批次令牌。面试改期后旧延迟消息仍会到期，
+         * 靠令牌不匹配把它识别为"已被取代的提醒"并丢弃。
+         */
+        private String token;
+
+        /** 完整提醒文案（含面试时间与面试编号） */
+        private String content;
+
+        private List<Long> receiverIds;
+    }
 }

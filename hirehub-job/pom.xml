@@ -70,6 +70,13 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-tracing-bridge-brave</artifactId>
         </dependency>
+        <!-- 三期修正：tracing 的自动配置（BraveAutoConfiguration）位于
+             spring-boot-actuator-autoconfigure，只引 bridge 不会创建 Tracer bean，
+             traceId 全链路实际是断的（见踩坑记录 #19）。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
         <!-- 二期：Sentinel 限流降级（见 §8.3） -->
         <dependency>
             <groupId>com.alibaba.cloud</groupId>

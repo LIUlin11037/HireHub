@@ -25,6 +25,16 @@ spring:
       simple:
         acknowledge-mode: manual   # 处理成功才 ACK，配合 mq_consume_log 幂等
         prefetch: 10
+  # 三期：ws-ticket 存储 + 多实例长连接消息路由（见 D-34）
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+hirehub:
+  ws:
+    ticket-ttl-seconds: 60        # 一次性票据有效期，够客户端握手即可
+    heartbeat-seconds: 30         # 服务端 PING 间隔，用于清理半开连接
 
 mybatis-plus:
   configuration:

@@ -6,6 +6,7 @@ import io.jsonwebtoken.Claims;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
@@ -45,6 +46,14 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     private static final String BLACKLIST_KEY = "auth:blacklist:%s";
     private static final String TRACE_HEADER = "X-Trace-Id";
 
+    /**
+     * WebSocket 握手前缀（见 D-34）：浏览器 WebSocket API <b>不能自定义请求头</b>，
+     * 所以这里拿不到 Authorization，只能放行握手，改由 notification 服务用
+     * 一次性 ticket（{@code ?ticket=xxx}）自鉴权。放行的只是握手，
+     * 没有有效 ticket 的连接会被服务端立即关闭。
+     */
+    private static final String WS_PREFIX = "/ws/";
+
     private static final Set<String> WHITE_LIST = Set.of(
             "/api/auth/register",
             "/api/auth/login",
@@ -56,12 +65,19 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
 
     private final JwtUtil jwtUtil;
     private final ReactiveStringRedisTemplate redis;
-    private final Tracer tracer;
 
-    public AuthGlobalFilter(JwtUtil jwtUtil, ReactiveStringRedisTemplate redis, Tracer tracer) {
+    /**
+     * 用 ObjectProvider 而不是直接注入 Tracer：tracing 是<b>旁路能力</b>，
+     * 缺了它不该让网关起不来（曾经因为没引 actuator 导致 Tracer bean 缺失、
+     * 网关启动直接失败，见踩坑记录 #19）。
+     */
+    private final ObjectProvider<Tracer> tracerProvider;
+
+    public AuthGlobalFilter(JwtUtil jwtUtil, ReactiveStringRedisTemplate redis,
+                            ObjectProvider<Tracer> tracerProvider) {
         this.jwtUtil = jwtUtil;
         this.redis = redis;
-        this.tracer = tracer;
+        this.tracerProvider = tracerProvider;
     }
 
     @Override
@@ -69,7 +85,7 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         exposeTraceId(exchange);
 
         String path = exchange.getRequest().getURI().getPath();
-        if (WHITE_LIST.contains(path)) {
+        if (WHITE_LIST.contains(path) || path.startsWith(WS_PREFIX)) {
             return chain.filter(exchange);
         }
 
@@ -125,9 +141,12 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     /** 把当前链路的 traceId 写进响应头，便于排查问题（见架构文档 §8.4） */
     private void exposeTraceId(ServerWebExchange exchange) {
         exchange.getResponse().beforeCommit(() -> {
-            Span span = tracer.currentSpan();
-            if (span != null) {
-                exchange.getResponse().getHeaders().set(TRACE_HEADER, span.context().traceId());
+            Tracer tracer = tracerProvider.getIfAvailable();
+            if (tracer != null) {
+                Span span = tracer.currentSpan();
+                if (span != null) {
+                    exchange.getResponse().getHeaders().set(TRACE_HEADER, span.context().traceId());
+                }
             }
             return Mono.empty();
         });

@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.io.IOException;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -251,7 +252,7 @@ public class ResumeIndexService implements ApplicationRunner {
      * 剩下的会被算成"缺失"而每轮全量重灌，同时多出来的脏文档永远清不掉。
      * 用 {@code _doc} 排序翻页：全量扫描场景下它比按字段排序便宜。
      */
-    private Set<Long> actualIds() {
+    private Set<Long> actualIds() throws IOException {
         Set<Long> ids = new HashSet<>();
         List<FieldValue> cursor = null;
         for (int page = 0; page < SCAN_MAX_PAGES; page++) {
