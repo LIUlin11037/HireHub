@@ -48,5 +48,29 @@
             <version>0.12.6</version>
             <scope>runtime</scope>
         </dependency>
+        <!-- 三期：下游服务手工构建 SecurityContext 支持 @PreAuthorize（见 D-02 / D-07）。
+             全部 optional —— 只有真正引入 spring-boot-starter-security 的服务才会用到，
+             网关(WebFlux)与未开启方法级鉴权的服务不会被牵连。 -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-core</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-web</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <!-- HttpSecurity / SecurityFilterChain 在 config 包，不在 web 包 -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-config</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <optional>true</optional>
+        </dependency>
     </dependencies>
 </project>

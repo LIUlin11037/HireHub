@@ -1,8 +1,8 @@
 package com.ll.hirehub.auth.service;
 
-import com.ll.hirehub.auth.util.IdCardUtil;
 import com.ll.hirehub.common.exception.BusinessException;
 import com.ll.hirehub.common.result.ResultCode;
+import com.ll.hirehub.common.util.IdCardUtil;
 import org.springframework.stereotype.Component;
 
 /**

@@ -1,0 +1,17 @@
+# 构建上下文裁剪：只需要各模块 target 下的 fat jar，源码/文档/IDE 文件都不进上下文
+.git/
+.idea/
+docs/
+logs/
+scripts/
+sql/
+config/
+
+# 源码与测试产物不需要（jar 已含 class）
+**/src/
+**/target/*.original
+**/target/classes/
+**/target/generated-sources/
+**/target/maven-archiver/
+**/target/maven-status/
+**/target/test-classes/

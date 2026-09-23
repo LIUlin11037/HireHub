@@ -9,6 +9,7 @@ import com.ll.hirehub.resume.entity.JobPreference;
 import com.ll.hirehub.resume.entity.Resume;
 import com.ll.hirehub.resume.mapper.JobPreferenceMapper;
 import com.ll.hirehub.resume.mapper.ResumeMapper;
+import com.ll.hirehub.resume.search.ResumeIndexService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +22,7 @@ public class ResumeService {
 
     private final ResumeMapper resumeMapper;
     private final JobPreferenceMapper preferenceMapper;
+    private final ResumeIndexService resumeIndexService;
 
     @Transactional(rollbackFor = Exception.class)
     public Long create(Long userId, SaveResumeRequest req) {
@@ -29,6 +31,9 @@ public class ResumeService {
         applyReq(resume, req);
         resume.setParseStatus(0);
         resumeMapper.insert(resume);
+        // 新建后立刻按隐私规则评估：默认最小可见（多半不该进索引，refresh 会自行判断）
+        // 用 afterCommit 版本：ES 不参与数据库回滚，写在提交前会产生"库里没有、索引里有"的漂移
+        resumeIndexService.refreshAfterCommit(resume.getId());
         return resume.getId();
     }
 
@@ -37,6 +42,8 @@ public class ResumeService {
         Resume resume = requireOwner(userId, resumeId);
         applyReq(resume, req);
         resumeMapper.updateById(resume);
+        // status（公开/保密）在这里可能被改动 → 必须同步索引，否则"关了曝光还能被搜到"
+        resumeIndexService.refreshAfterCommit(resumeId);
     }
 
     public Resume get(Long userId, Long resumeId) {
@@ -66,6 +73,8 @@ public class ResumeService {
             applyPreference(p, req);
             preferenceMapper.updateById(p);
         }
+        // 求职状态 / 屏蔽公司变化会改变全部简历的可搜性（D-23 要求实时生效，不能等对账）
+        resumeIndexService.refreshByUserAfterCommit(userId);
     }
 
     private Resume requireOwner(Long userId, Long resumeId) {

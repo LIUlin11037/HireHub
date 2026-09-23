@@ -20,6 +20,10 @@ public interface CompanyClient {
     Result<CompanyMemberDTO> getMember(@RequestParam("companyId") Long companyId,
                                        @RequestParam("userId") Long userId);
 
+    /** 查某用户加入的全部企业及角色（`GET /api/auth/me/identities` 的数据源，见 D-06） */
+    @GetMapping("/internal/user-companies")
+    Result<List<CompanyMemberDTO>> listUserCompanies(@RequestParam("userId") Long userId);
+
     /** 查企业在职成员的用户 ID（状态变更通知 HR 用，见 §6.2 通知映射） */
     @GetMapping("/internal/member-ids")
     Result<List<Long>> listMemberUserIds(@RequestParam("companyId") Long companyId);

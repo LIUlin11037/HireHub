@@ -1,8 +1,10 @@
-package com.ll.hirehub.auth.util;
+package com.ll.hirehub.common.util;
 
 /**
- * 身份证号校验位算法（GB 11643-1999 / ISO 7064 MOD 11-2）
- * 不依赖任何外部接口，可真实校验 18 位身份证号是否"编造"
+ * 身份证号校验位算法（GB 11643-1999 / ISO 7064 MOD 11-2）。
+ * <p>
+ * 纯算法、无外部依赖，所以从 auth 移到 common 供多服务复用——
+ * 三层核验里「法人授权」也需要校验法人身份证（见 D-24）。
  */
 public final class IdCardUtil {
 

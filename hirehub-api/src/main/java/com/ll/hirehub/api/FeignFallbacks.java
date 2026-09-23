@@ -3,6 +3,7 @@ package com.ll.hirehub.api;
 import com.ll.hirehub.api.dto.CompanyMemberDTO;
 import com.ll.hirehub.api.dto.DeliveryDTO;
 import com.ll.hirehub.api.dto.JobDTO;
+import com.ll.hirehub.api.dto.OperationLogRequest;
 import com.ll.hirehub.api.dto.ResumeDTO;
 import com.ll.hirehub.common.result.Result;
 import org.springframework.cloud.openfeign.FallbackFactory;
@@ -34,6 +35,11 @@ public final class FeignFallbacks {
                 }
 
                 @Override
+                public Result<List<CompanyMemberDTO>> listUserCompanies(Long userId) {
+                    return Result.ok(Collections.emptyList());
+                }
+
+                @Override
                 public Result<List<Long>> listMemberUserIds(Long companyId) {
                     return Result.ok(Collections.emptyList());
                 }
@@ -49,7 +55,18 @@ public final class FeignFallbacks {
     public static class AuthClientFallbackFactory implements FallbackFactory<AuthClient> {
         @Override
         public AuthClient create(Throwable cause) {
-            return userId -> Result.ok(null);
+            return new AuthClient() {
+                @Override
+                public Result<Integer> getRealNameStatus(Long userId) {
+                    return Result.ok(null);
+                }
+
+                @Override
+                public Result<Void> saveOperationLog(OperationLogRequest req) {
+                    // 审计上报降级：静默失败，绝不能因为审计中心挂了而阻断管理操作
+                    return Result.ok();
+                }
+            };
         }
     }
 

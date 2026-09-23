@@ -1,13 +1,14 @@
 # HireHub 项目上下文（会话压缩版）
 
 > 用途：新会话喂这一个文件即可恢复上下文，替代长对话历史。
-> 生成时点：二期建设中（一期端到端全绿；二期已完成投递最终一致性/通知/幂等/缓存三防/springdoc/tracing/sentinel，ES/MinIO/三层核验/Docker 化进行中）。
+> 生成时点：**三期执行中**（一期端到端全绿；二期 14/15 已验证、Docker 全栈待跑；三期 M0 完成 1/4、M1–M3 代码完成待编译验证）。
 
 ## ⚠️ 新会话必读（最高优先级）
 
-1. **动手前必须先通读两份文档**（硬性要求，不要只靠本文件）：
-   - `docs/关键决策记录.md`：28 条 ADR + 待定事项 Q-01~Q-09。**已定的照做；待定的不得擅自决定，必须先和用户讨论。**
+1. **动手前必须先通读下面三份文档**（硬性要求，不要只靠本文件）：
+   - `docs/关键决策记录.md`：**35 条 ADR** + 待定事项 Q-01~Q-09（**Q-03/Q-05/Q-07 已决议**）。**已定的照做；待定的不得擅自决定，必须先和用户讨论。**
    - `docs/架构与实施文档.md`：分期计划、链路设计、接口清单、版本约束。
+   - `docs/踩坑记录.md`——里面是反复踩过的坑和最终解法，别重复踩。
 2. **踩坑先查** `docs/踩坑记录.md`——里面是反复踩过的坑和最终解法，别重复踩。
 3. **文档纪律（强制）**：
    - 产生**重大决策** → 必须新增 ADR 到 `docs/关键决策记录.md`；
@@ -36,7 +37,7 @@
 
 **求新路线踩坑（已处理）**：Gateway 坐标改名 → `spring-cloud-starter-gateway-server-webflux`；springdoc 必须用 2.x（3.x 给 Boot 4）；全线 `jakarta.*`。
 
-## 三、28 条决策（一句话版）
+## 三、35 条决策（一句话版）
 
 | 编号 | 结论 |
 |---|---|
@@ -69,6 +70,12 @@
 | D-27 | **投递状态机**：事件驱动 + 迁移表 + 乐观锁，前端只发事件 |
 | D-28 | **投递与面试解耦**：两套独立状态机，面试取消不回退投递 |
 | D-29 | **自然语言搜索**：大模型（**qwen3.7-plus**）把自然语言格式化成 ES 结构化查询（关键词 + 过滤） |
+| D-30 | **三期不做前端**：交付接口 + 文档 + Apifox 集合，演示走 Swagger UI |
+| D-31 | **简历解析管线**：上传确认 → MQ 异步 → PDFBox/POI → `resume_parse_detail` + `resume_index`；只回填空字段 |
+| D-32 | **面试提醒延迟消息**：TTL + DLX + **定时兜底扫描** + `interview_reminder` 唯一键去重（不装延迟插件） |
+| D-33 | **服务内方法级鉴权**：引 Security + Header 过滤器构 `SecurityContext` + 过滤器链**全 permitAll** + `@PreAuthorize` |
+| D-34 | **WebSocket 站内消息**：并入 notification；一次性 `ws-ticket`；Redis Pub/Sub 多实例路由 |
+| D-35 | **管理端审计日志**：集中存 auth `sys_operation_log`，内部接口上报，`trace_id` 与链路打通 |
 
 完整版见 `docs/关键决策记录.md`；架构细节见 `docs/架构与实施文档.md`。
 
@@ -122,10 +129,29 @@ SQL：`sql/init-databases.sql` + 7 个 `*-schema.sql`
 
 **一期（已完成）**：端到端验证 49~50/50 全绿；文档 `docs/第一期运行指南.md`、`docs/端到端验证.md`、`docs/端到端验证报告.md`。
 
-**二期（已完成）**：本地消息表 + MQ 投递最终一致性、通知打通、幂等（SETNX + MQ 消费去重）、Redis 缓存三防 + 布隆过滤器、springdoc（webjar 自托管 Swagger UI）、Micrometer Tracing、Sentinel（Feign 降级 + 网关限流）、docker-compose 补 ES/MinIO。
+**二期（已完成，14/15 已验证）**：本地消息表 + MQ 投递最终一致性、通知打通、幂等（SETNX + MQ 消费去重）、Redis 缓存三防 + 布隆过滤器、springdoc（webjar 自托管 Swagger UI）、Micrometer Tracing、Sentinel（Feign fallbackFactory + 网关 gw-flow 限流）、**ES 双索引**（job_index / company_index：IK 分词、MQ 异步同步、对账、相关性、过滤、高亮、search_after）、**自然语言搜索**（D-29：Mock + qwen3.7-plus LLM）、**MinIO 简历预签名直传**、**三层核验**（D-24：实名 + 风险评分 + 法人授权令牌闭环）。
 
-**二期（未完成）**：ES+IK 搜索、MinIO 简历上传、三层核验（D-24）、全部服务 Docker 化。
+**二期（产物已完成，全栈启动待端口交接）**：全部服务 Docker 化——`docker/Dockerfile`（通用镜像，auth 镜像已验证可构建）、`docker/docker-compose-services.yml`（8 服务 + healthcheck + depends_on 启动顺序 + mem_limit + host.docker.internal 中间件访问）。本地 9000-9007 被 IDE 占用，跑全栈需先停 IDE 服务再 `docker compose -f docker/docker-compose-services.yml up -d --build`。
 
-**一期已决策但代码未落地（待补）**：D-02 双 token、D-06 `/me/identities`、D-07 `@PreAuthorize` + 更多管理端接口 + `sys_operation_log`、D-23 求职者隐私模型。
+**一期已决策但代码未落地（三期补课，代码已完成待验证）**：D-02 双 token + refresh 轮换 + jti 黑名单、D-06 `/me/identities` + 成员缓存、D-07 `@PreAuthorize` + job 管理端 + `sys_operation_log`、D-23 求职者隐私模型。**均已写完代码，但一行都没编译过。**
 
-**下一步**：ES+IK 搜索 → MinIO → 三层核验 → Docker 化（按关键决策记录 + 架构文档执行）。
+**三期执行状态**（里程碑编号以 `docs/第三期计划.md` §1 为准，旧版编号已废弃）：
+
+| 里程碑 | 状态 |
+|---|---|
+| M0 二期收尾 | 🔄 1/4 —— 0.4 `job_index` **已实测 green**；0.1 Docker 全栈 / 0.2 Sentinel 限流 / 0.3 traceId **待你操作** |
+| M1 认证可撤销（D-02） | 🔄 代码完成 |
+| M2 身份与审计（D-06 / D-07） | 🔄 代码完成 |
+| M3 隐私与解析（D-23 / Q-03） | 🔄 代码完成 |
+| M4 实时（面试提醒 / WebSocket） | ⬜ 未开始 |
+| M5 收口（压测 / RabbitMQ 入 compose / Q-08 / 文档同步） | ⬜ 未开始 |
+
+**本轮实测结论（重要）**：0.2 那条**限流确实没生效** —— 40 并发 / 约 575 QPS 打 `/api/auth/login`，全 401、**0 个 429**。根因是 Nacos 里没有 `hirehub-gateway-flow` 这条配置（`config/sentinel/` 下的 json 只是留档，不会自动发布）。Nacos 3.0 脚本推送走不通，**只能控制台手动加**，见 `踩坑记录.md` #17。
+
+**需要用户操作的事项**（沙箱与工作区限制，我做不了，见 `踩坑记录.md` #10 / #18）：
+1. 在 IDEA 编译并启动 8 个服务（沙箱会杀掉由我派生的、绑定监听端口的 java 进程）
+2. 按库执行 `sql/phase3-migration.sql`（`hirehub_auth` / `hirehub_resume`）
+3. Nacos 控制台 `8080` 加 `hirehub-gateway-flow`（`rule-type` = `gw-flow`）
+4. Docker 全栈需先停 IDEA 服务腾出 9000–9007
+
+**下一步**：M4（面试提醒 TTL+DLX、WebSocket 并入 notification）→ M5 收口；每批改动后跑 `scripts/e2e-verify.ps1 -Fresh` 保证一期 **49/49 不回归**。

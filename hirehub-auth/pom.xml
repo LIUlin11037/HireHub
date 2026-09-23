@@ -19,6 +19,11 @@
             <groupId>com.ll</groupId>
             <artifactId>hirehub-common</artifactId>
         </dependency>
+        <!-- 三期：/me/identities 通过 Feign 查 company 的企业身份（D-06） -->
+        <dependency>
+            <groupId>com.ll</groupId>
+            <artifactId>hirehub-api</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
@@ -46,9 +51,20 @@
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-crypto</artifactId>
         </dependency>
+        <!-- 三期：管理端方法级鉴权 @PreAuthorize（见 D-07）。
+             starter-security 已含 crypto，上面那条保留是为了让"密码散列"的意图显式可见。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!-- 三期：Redis 存 refresh token 白名单 + access token 黑名单（双 token 撤销，见 D-02） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
         <!-- 二期：springdoc 接口文档 + Swagger UI（见架构文档 §2.2） -->
         <dependency>

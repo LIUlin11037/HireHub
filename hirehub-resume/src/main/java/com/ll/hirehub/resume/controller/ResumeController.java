@@ -1,11 +1,13 @@
 package com.ll.hirehub.resume.controller;
 
 import com.ll.hirehub.common.result.Result;
+import com.ll.hirehub.resume.dto.ConfirmUploadRequest;
 import com.ll.hirehub.resume.dto.SavePreferenceRequest;
 import com.ll.hirehub.resume.dto.SaveResumeRequest;
 import com.ll.hirehub.resume.entity.JobPreference;
 import com.ll.hirehub.resume.entity.Resume;
 import com.ll.hirehub.resume.service.ResumeService;
+import com.ll.hirehub.resume.service.ResumeUploadService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/resume")
@@ -25,6 +28,7 @@ import java.util.List;
 public class ResumeController {
 
     private final ResumeService resumeService;
+    private final ResumeUploadService resumeUploadService;
 
     @PostMapping
     public Result<Long> create(@RequestHeader("X-User-Id") Long userId,
@@ -48,6 +52,22 @@ public class ResumeController {
     @GetMapping("/mine")
     public Result<List<Resume>> mine(@RequestHeader("X-User-Id") Long userId) {
         return Result.ok(resumeService.mine(userId));
+    }
+
+    /** 生成 MinIO 预签名上传 URL（前端直传，见 §6.6 / D-08） */
+    @PostMapping("/{id}/upload-url")
+    public Result<Map<String, String>> uploadUrl(@RequestHeader("X-User-Id") Long userId,
+                                                 @PathVariable Long id) {
+        return Result.ok(resumeUploadService.presignPutUrl(userId, id));
+    }
+
+    /** 前端直传成功后的回调确认：把 objectKey 落库 */
+    @PostMapping("/{id}/confirm-upload")
+    public Result<Void> confirmUpload(@RequestHeader("X-User-Id") Long userId,
+                                      @PathVariable Long id,
+                                      @Valid @RequestBody ConfirmUploadRequest req) {
+        resumeUploadService.confirm(userId, id, req.getObjectKey());
+        return Result.ok();
     }
 
     @GetMapping("/preference")

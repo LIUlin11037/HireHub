@@ -49,7 +49,10 @@ public class JobSearchService {
             if (exists) {
                 return;
             }
-            client.indices().create(c -> c.index(INDEX).mappings(m -> m
+            // 单节点集群必须 replicas=0，否则索引状态恒为 yellow（unassigned_shards=1），见踩坑记录
+            client.indices().create(c -> c.index(INDEX)
+                    .settings(s -> s.numberOfShards("1").numberOfReplicas("0"))
+                    .mappings(m -> m
                     .properties("id", p -> p.long_(x -> x))
                     .properties("companyId", p -> p.long_(x -> x))
                     .properties("categoryId", p -> p.long_(x -> x))

@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS resume (
     status            TINYINT     NOT NULL DEFAULT 0,   -- 0 保密 / 1 公开（是否允许被 HR 搜到，见 D-23）
     parse_status      TINYINT     NOT NULL DEFAULT 0,   -- 0 待解析 / 1 解析中 / 2 成功 / 3 失败
     attachment_id     BIGINT,
+    attachment_key    VARCHAR(255),                        -- MinIO 对象键（二期 §6.6）
     create_time       DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time       DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted           TINYINT     NOT NULL DEFAULT 0,

@@ -1,15 +1,21 @@
 package com.ll.hirehub.company.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ll.hirehub.api.AuthClient;
 import com.ll.hirehub.common.exception.BusinessException;
 import com.ll.hirehub.common.result.ResultCode;
+import com.ll.hirehub.common.util.IdCardUtil;
 import com.ll.hirehub.company.dto.AdminVerifyRequest;
+import com.ll.hirehub.company.dto.AuthorizeRequest;
 import com.ll.hirehub.company.dto.CreateCompanyRequest;
 import com.ll.hirehub.company.dto.JoinRequest;
 import com.ll.hirehub.company.dto.SubmitVerifyRequest;
+import com.ll.hirehub.company.dto.SubmitVerifyResult;
 import com.ll.hirehub.company.entity.Company;
+import com.ll.hirehub.company.entity.CompanyAuthorization;
 import com.ll.hirehub.company.entity.CompanyMember;
 import com.ll.hirehub.company.entity.CompanyVerifyRecord;
+import com.ll.hirehub.company.mapper.CompanyAuthorizationMapper;
 import com.ll.hirehub.company.mapper.CompanyMapper;
 import com.ll.hirehub.company.mapper.CompanyMemberMapper;
 import com.ll.hirehub.company.mapper.CompanyVerifyRecordMapper;
@@ -19,6 +25,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -31,8 +39,12 @@ public class CompanyService {
     private final CompanyMapper companyMapper;
     private final CompanyMemberMapper memberMapper;
     private final CompanyVerifyRecordMapper recordMapper;
+    private final CompanyAuthorizationMapper authorizationMapper;
     private final CompanyVerifier companyVerifier;
+    private final RiskScorer riskScorer;
+    private final AuthClient authClient;
     private final ApplicationEventPublisher eventPublisher;
+    private final CompanyMemberCache memberCache;
 
     /** 创建企业（创建者自动成为 OWNER，见 D-14 / §6.7） */
     @Transactional(rollbackFor = Exception.class)
@@ -64,6 +76,7 @@ public class CompanyService {
         member.setIsLegalRep(0);
         member.setStatus(1);
         memberMapper.insert(member);
+        evictMemberAfterCommit(company.getId(), userId);
         eventPublisher.publishEvent(new CompanySyncEvent(company.getId()));   // 同步 company_index
         return company.getId();
     }
@@ -72,14 +85,32 @@ public class CompanyService {
         return requireCompany(companyId);
     }
 
-    /** 提交企业认证：自动核验（Mock）+ 留档，等待管理员最终审核 */
+    /**
+     * 提交企业认证 —— 三层核验（见 D-24 / §6.7）。
+     * <pre>
+     *   第一层 个人实名（auth）：未实名直接拒绝
+     *   基础数据核验（D-18）：信用代码真算法 + 企业三要素（Mock）+ 经营状态
+     *   第二层 风险评分：低风险 → 自动通过；中风险 → 走第三层
+     *   第三层 法人授权令牌闭环：生成一次性令牌，等法人本人完成实名并授权
+     * </pre>
+     * 任何一层的结果都写入 company_verify_record 留档。
+     */
     @Transactional(rollbackFor = Exception.class)
-    public void submitVerify(Long userId, Long companyId, SubmitVerifyRequest req) {
+    public SubmitVerifyResult submitVerify(Long userId, Long companyId, SubmitVerifyRequest req) {
         Company company = requireCompany(companyId);
         requireOwner(companyId, userId);
 
+        // 第一层：个人实名（不信任前端，向 auth 核实）
+        Integer realNameStatus = authClient.getRealNameStatus(userId).getData();
+        if (realNameStatus == null || realNameStatus != 1) {
+            throw new BusinessException("请先完成个人实名认证");
+        }
+
+        // 基础数据核验（D-18）
         CompanyVerifyResult result = companyVerifier.verify(
                 company.getName(), company.getCreditCode(), req.getLegalPersonName());
+
+        SubmitVerifyResult vo = new SubmitVerifyResult();
 
         CompanyVerifyRecord record = new CompanyVerifyRecord();
         record.setCompanyId(companyId);
@@ -93,15 +124,105 @@ public class CompanyService {
         record.setRemark(result.getMessage());
         recordMapper.insert(record);
 
+        // 基础核验不通过（含注销 / 吊销）→ 直接驳回
         if (!result.isValid()) {
             company.setVerifyStatus(2);
             company.setVerifyRemark(result.getMessage());
+            companyMapper.updateById(company);
+            vo.setRiskLevel("REJECTED");
+            return vo;
+        }
+
+        company.setLegalPersonName(req.getLegalPersonName());
+        company.setBusinessStatus(result.getBusinessStatus());
+
+        // 第二层：风险评分（简单加权，见 §6.7）
+        boolean hasLicense = req.getLicenseUrl() != null && !req.getLicenseUrl().isBlank();
+        String risk = riskScorer.score(true, hasLicense, hasEverRejected(companyId));
+        company.setRiskLevel(risk);
+        vo.setRiskLevel(risk);
+
+        if (RiskScorer.LOW.equals(risk)) {
+            // 低风险：材料齐全 + 已实名 → 自动通过
+            company.setVerifyStatus(1);
+            company.setVerifyTime(LocalDateTime.now());
+            vo.setAutoApproved(true);
         } else {
-            company.setLegalPersonName(req.getLegalPersonName());
-            company.setBusinessStatus(result.getBusinessStatus());
-            company.setVerifyStatus(0); // 自动核验通过，仍待管理员最终审核
+            // 中风险：进第三层，生成法人授权令牌（企业保持待审核，等法人授权）
+            company.setVerifyStatus(0);
+            vo.setAuthorizationToken(createAuthorization(companyId, req.getLegalPersonName()));
         }
         companyMapper.updateById(company);
+        eventPublisher.publishEvent(new CompanySyncEvent(companyId));
+        return vo;
+    }
+
+    /**
+     * 第三层：法人授权（**法人无需注册账号**，凭一次性令牌 + 实名完成授权）。
+     * <p>
+     * 与「姓名比对」的本质区别：重名率极高，姓名是弱证据；
+     * 法人本人完成实名并点击同意才是强证据——授权来自法人行为，不是系统推断。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void authorize(AuthorizeRequest req) {
+        CompanyAuthorization auth = authorizationMapper.selectOne(new LambdaQueryWrapper<CompanyAuthorization>()
+                .eq(CompanyAuthorization::getToken, req.getToken()));
+        if (auth == null || auth.getStatus() == null || auth.getStatus() != CompanyAuthorization.STATUS_PENDING) {
+            throw new BusinessException("授权令牌无效或已使用");
+        }
+        if (auth.getExpireTime() != null && auth.getExpireTime().isBefore(LocalDateTime.now())) {
+            auth.setStatus(CompanyAuthorization.STATUS_EXPIRED);
+            authorizationMapper.updateById(auth);
+            throw new BusinessException("授权令牌已过期");
+        }
+        // 法人实名：身份证校验位真算法（人证比对 Mock）
+        if (!IdCardUtil.isValid(req.getIdCard())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "身份证号校验位错误");
+        }
+
+        auth.setStatus(CompanyAuthorization.STATUS_AUTHORIZED);
+        auth.setLegalPersonRealName(req.getRealName());
+        auth.setAuthorizeTime(LocalDateTime.now());
+        authorizationMapper.updateById(auth);
+
+        // 法人授权成功即视为企业通过认证
+        Company company = requireCompany(auth.getCompanyId());
+        company.setVerifyStatus(1);
+        company.setVerifyTime(LocalDateTime.now());
+        company.setVerifyRemark("法人已授权");
+        companyMapper.updateById(company);
+
+        CompanyVerifyRecord record = new CompanyVerifyRecord();
+        record.setCompanyId(auth.getCompanyId());
+        record.setCreditCode(company.getCreditCode());
+        record.setCompanyName(company.getName());
+        record.setLegalPersonName(req.getRealName());
+        record.setVerifyChannel("LEGAL_AUTH");
+        record.setResult("通过");
+        record.setRemark("法人授权");
+        recordMapper.insert(record);
+
+        eventPublisher.publishEvent(new CompanySyncEvent(auth.getCompanyId()));
+    }
+
+    /** 生成法人授权令牌：随机、一次性、24 小时有效 */
+    private String createAuthorization(Long companyId, String legalPersonName) {
+        CompanyAuthorization auth = new CompanyAuthorization();
+        auth.setCompanyId(companyId);
+        auth.setToken(UUID.randomUUID().toString().replace("-", ""));
+        auth.setLegalPersonName(legalPersonName);
+        auth.setStatus(CompanyAuthorization.STATUS_PENDING);
+        auth.setExpireTime(LocalDateTime.now().plusHours(24));
+        authorizationMapper.insert(auth);
+        return auth.getToken();
+    }
+
+    /** 同企业是否曾被驳回（风险评分维度之一） */
+    private boolean hasEverRejected(Long companyId) {
+        Long count = recordMapper.selectCount(new LambdaQueryWrapper<CompanyVerifyRecord>()
+                .eq(CompanyVerifyRecord::getCompanyId, companyId)
+                .eq(CompanyVerifyRecord::getResult, "驳回"));
+        return count != null && count > 0;
     }
 
     /** 管理员审核（见 D-05 / D-07），只处理待审核状态 */
@@ -166,6 +287,28 @@ public class CompanyService {
         member.setIsLegalRep(0);
         member.setStatus(1);
         memberMapper.insert(member);
+        evictMemberAfterCommit(company.getId(), userId);
+    }
+
+    /**
+     * 成员关系变化后失效缓存（见 D-06）。
+     * <p>
+     * <b>必须在事务提交后失效</b>：如果先删缓存、事务又回滚，并发读会把"旧值"重新填回缓存，
+     * 结果缓存带着错误权限活到 TTL 结束——权限缓存的脏读就是水平越权。
+     * 提交后删除只剩一个极小的窗口（读完旧值 → 提交 → 删除），配合短 TTL 可以接受；
+     * 要彻底消除需延迟双删，本项目不值得为此增加复杂度。
+     */
+    private void evictMemberAfterCommit(Long companyId, Long userId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    memberCache.evict(companyId, userId);
+                }
+            });
+        } else {
+            memberCache.evict(companyId, userId);
+        }
     }
 
     public List<CompanyMember> members(Long companyId) {

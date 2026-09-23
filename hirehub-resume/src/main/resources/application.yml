@@ -1,6 +1,17 @@
 server:
   port: 9004
 
+hirehub:
+  minio:
+    endpoint: http://localhost:9010
+    access-key: minioadmin
+    secret-key: minioadmin
+    bucket: resume
+  # 三期：简历解析结果索引（人才库检索，见 D-23）
+  es:
+    host: localhost
+    port: 9200
+
 spring:
   application:
     name: hirehub-resume
@@ -15,6 +26,17 @@ spring:
       password: "${NACOS_PASSWORD:nacos}"
       discovery:
         server-addr: localhost:8848
+  # 三期：附件上传确认后发 resume.parse，异步解析（见 Q-03）
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    publisher-confirm-type: correlated
+    listener:
+      simple:
+        acknowledge-mode: manual   # 处理成功才 ACK，配合 mq_consume_log 幂等
+        prefetch: 5
 
 mybatis-plus:
   configuration:
@@ -31,6 +53,9 @@ management:
       probability: 1.0   # 开发期全采样，生产按需调低
 
 logging:
+  # 落盘一份：traceId 排障 / 脚本化验证不需要盯着 IDEA 控制台（工作目录 = 项目根目录）
+  file:
+    name: logs/${spring.application.name}.log
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}] %-15.15t %-40.40logger{39} : %m%n%wEx"
 

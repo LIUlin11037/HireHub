@@ -29,6 +29,8 @@ public class Company {
     private Integer verifyStatus;
     private LocalDateTime verifyTime;
     private String verifyRemark;
+    /** 风险等级（二期 D-24：LOW 自动通过 / MEDIUM 需法人授权） */
+    private String riskLevel;
 
     private String inviteCode;
     private LocalDateTime inviteCodeExpireTime;

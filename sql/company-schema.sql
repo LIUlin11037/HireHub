@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS company (
     verify_status           TINYINT      NOT NULL DEFAULT 0, -- 0 待审核 / 1 通过 / 2 驳回 / 3 已撤销
     verify_time             DATETIME,
     verify_remark           VARCHAR(255),
+    risk_level              VARCHAR(16),                     -- LOW / MEDIUM（二期 D-24 风险评分）
     invite_code             VARCHAR(64),
     invite_code_expire_time DATETIME,
     create_time             DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -63,4 +64,19 @@ CREATE TABLE IF NOT EXISTS mq_consume_log (
     consumer    VARCHAR(64) NOT NULL,
     create_time DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_message_consumer (message_id, consumer)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+-- 法人授权令牌（二期 D-24 三层核验之第三层）
+CREATE TABLE IF NOT EXISTS company_authorization (
+    id                     BIGINT AUTO_INCREMENT PRIMARY KEY,
+    company_id             BIGINT      NOT NULL,
+    token                  VARCHAR(64) NOT NULL,             -- 随机、一次性、有有效期
+    legal_person_name      VARCHAR(64),
+    status                 TINYINT     NOT NULL DEFAULT 0,   -- 0 待授权 / 1 已授权 / 2 已过期 / 3 已撤销
+    legal_person_real_name VARCHAR(64),                      -- 法人完成实名时填（不存身份证号，见 D-18）
+    expire_time            DATETIME,
+    authorize_time         DATETIME,
+    create_time            DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_token (token),
+    KEY idx_company (company_id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;

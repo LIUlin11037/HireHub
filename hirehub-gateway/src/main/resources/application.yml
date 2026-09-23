@@ -4,6 +4,11 @@ server:
 spring:
   application:
     name: hirehub-gateway
+  # 三期：查 access token 黑名单（D-02）
+  data:
+    redis:
+      host: localhost
+      port: 6379
   cloud:
     nacos:
       username: nacos
@@ -68,5 +73,8 @@ management:
       probability: 1.0   # 开发期全采样，生产按需调低
 
 logging:
+  # 落盘一份：traceId 排障 / 脚本化验证不需要盯着 IDEA 控制台（工作目录 = 项目根目录）
+  file:
+    name: logs/${spring.application.name}.log
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}] %-15.15t %-40.40logger{39} : %m%n%wEx"

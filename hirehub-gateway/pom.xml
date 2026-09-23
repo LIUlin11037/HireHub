@@ -57,6 +57,12 @@
             <artifactId>sentinel-spring-cloud-gateway-adapter</artifactId>
             <version>1.8.9</version>
         </dependency>
+        <!-- 三期：access token 黑名单校验（D-02）。必须是响应式客户端——
+             网关是 WebFlux/Netty，用阻塞 Redis 会占死事件循环线程。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

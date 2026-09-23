@@ -1,0 +1,185 @@
+# HireHub 二期：8 个服务全部容器化
+#
+# 依赖的中间件（MySQL/Redis/Nacos/ES/MinIO）由 docker-compose.yml 起；
+# RabbitMQ 本机原生运行。容器统一通过 host.docker.internal 访问宿主机上的中间件。
+#
+# 用法：
+#   1) 先确保 fat jar 已构建：mvn -DskipTests package
+#   2) docker compose -f docker/docker-compose-services.yml up -d --build
+#   3) 网关入口仍是 http://localhost:9000（端口从容器映射到宿主）
+#
+# §9.3 关键坑的处理见下方注释。
+
+x-service-common: &service-common
+  restart: unless-stopped
+  extra_hosts:
+    # 让容器能通过 host.docker.internal 访问宿主机的 MySQL / Redis / Nacos / RabbitMQ / ES / MinIO
+    - "host.docker.internal:host-gateway"
+  mem_limit: 640m
+  environment: &common-env
+    TZ: Asia/Shanghai
+    # 中间件都在宿主机上
+    SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: host.docker.internal:8848
+    SPRING_CLOUD_NACOS_DISCOVERY_USERNAME: nacos
+    SPRING_CLOUD_NACOS_DISCOVERY_PASSWORD: nacos
+    SPRING_RABBITMQ_HOST: host.docker.internal
+    SPRING_DATA_REDIS_HOST: host.docker.internal
+    HIREHUB_ES_HOST: host.docker.internal
+    HIREHUB_MINIO_ENDPOINT: http://host.docker.internal:9010
+
+services:
+
+  hirehub-auth:
+    <<: *service-common
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args: { JAR: hirehub-auth }
+    container_name: hirehub-auth
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3307/hirehub_auth?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+    ports: ["9001:9001"]
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/9001' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  hirehub-company:
+    <<: *service-common
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args: { JAR: hirehub-company }
+    container_name: hirehub-company
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3307/hirehub_company?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+    ports: ["9002:9002"]
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/9002' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  hirehub-job:
+    <<: *service-common
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args: { JAR: hirehub-job }
+    container_name: hirehub-job
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3307/hirehub_job?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+      # D-29：自然语言搜索用 LLM 时从这里注入，绝不写进镜像/代码
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+    ports: ["9003:9003"]
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/9003' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  hirehub-resume:
+    <<: *service-common
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args: { JAR: hirehub-resume }
+    container_name: hirehub-resume
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3307/hirehub_resume?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+      HIREHUB_MINIO_ENDPOINT: http://host.docker.internal:9010
+    ports: ["9004:9004"]
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/9004' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  hirehub-delivery:
+    <<: *service-common
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args: { JAR: hirehub-delivery }
+    container_name: hirehub-delivery
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3307/hirehub_delivery?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+    ports: ["9005:9005"]
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/9005' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  hirehub-interview:
+    <<: *service-common
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args: { JAR: hirehub-interview }
+    container_name: hirehub-interview
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3307/hirehub_interview?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+    ports: ["9006:9006"]
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/9006' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  hirehub-notification:
+    <<: *service-common
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args: { JAR: hirehub-notification }
+    container_name: hirehub-notification
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3307/hirehub_notification?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+    ports: ["9007:9007"]
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/9007' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  # 网关最后起：等 7 个下游 healthy（§9.3 启动顺序坑）
+  hirehub-gateway:
+    <<: *service-common
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args: { JAR: hirehub-gateway }
+    container_name: hirehub-gateway
+    environment:
+      <<: *common-env
+    ports: ["9000:9000"]
+    depends_on:
+      hirehub-auth:         { condition: service_healthy }
+      hirehub-company:      { condition: service_healthy }
+      hirehub-job:          { condition: service_healthy }
+      hirehub-resume:       { condition: service_healthy }
+      hirehub-delivery:     { condition: service_healthy }
+      hirehub-interview:    { condition: service_healthy }
+      hirehub-notification: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/9000' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s

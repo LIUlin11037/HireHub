@@ -32,6 +32,8 @@ public final class MqConst {
     public static final String RK_JOB_DELETE = "job.delete";
     /** 二期：企业变更 → ES 同步（见 §6.3） */
     public static final String RK_COMPANY_UPSERT = "company.upsert";
+    /** 三期：简历附件已上传 → 异步解析（见 Q-03） */
+    public static final String RK_RESUME_PARSE = "resume.parse";
 
     // ---------- 队列 ----------
     public static final String QUEUE_JOB_DELIVERY = "hirehub.job.delivery";
@@ -41,6 +43,8 @@ public final class MqConst {
     public static final String QUEUE_JOB_SEARCH = "hirehub.job.search";
     /** 二期：企业 ES 同步队列（company 服务自消费，写 company_index） */
     public static final String QUEUE_COMPANY_SEARCH = "hirehub.company.search";
+    /** 三期：简历解析队列（resume 服务自消费，PDFBox/POI → 结构化 + resume_index） */
+    public static final String QUEUE_RESUME_PARSE = "hirehub.resume.parse";
 
     /** 业务类型 */
     public static final class BizType {
@@ -59,6 +63,8 @@ public final class MqConst {
         public static final String JOB_DELETE = "JOB_DELETE";
         /** 企业新增/变更 → 同步 company_index */
         public static final String COMPANY_UPSERT = "COMPANY_UPSERT";
+        /** 简历附件已上传 → 触发解析 */
+        public static final String RESUME_PARSE = "RESUME_PARSE";
     }
 
     /** 消费者标识，写进 mq_consume_log 便于排查 */
@@ -72,5 +78,7 @@ public final class MqConst {
         public static final String JOB_SEARCH = "job-search";
         /** 企业 ES 同步消费者 */
         public static final String COMPANY_SEARCH = "company-search";
+        /** 简历解析消费者 */
+        public static final String RESUME_PARSE = "resume-parse";
     }
 }

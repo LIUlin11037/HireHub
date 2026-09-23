@@ -71,4 +71,18 @@ public final class MqPayload {
     public static class CompanySync implements Serializable {
         private Long companyId;
     }
+
+    /**
+     * 简历解析：resume.parse 的负载。
+     * <p>
+     * 只带定位信息（哪个简历、哪个对象键），不带文件内容——
+     * 消息体塞文件会让 MQ 变成文件传输通道，也会撑爆 broker 内存。
+     * 消费者自己去 MinIO 拉。
+     */
+    @Data
+    public static class ResumeParse implements Serializable {
+        private Long resumeId;
+        private Long userId;
+        private String objectKey;
+    }
 }

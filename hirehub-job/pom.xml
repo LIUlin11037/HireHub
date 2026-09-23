@@ -75,6 +75,12 @@
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
         </dependency>
+        <!-- 三期：管理端方法级鉴权 @PreAuthorize（见 D-07）。
+             引入后必须在 SecurityConfig 里全 permitAll，否则全接口 401——见踩坑记录。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
         <!-- Swagger UI 纯静态资源（绕开 springdoc 在 Boot3.5 下崩溃的内置资源映射，走 Boot 自带的 /webjars/**） -->
         <dependency>
             <groupId>org.webjars</groupId>

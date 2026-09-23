@@ -1,8 +1,11 @@
 package com.ll.hirehub.api;
 
+import com.ll.hirehub.api.dto.OperationLogRequest;
 import com.ll.hirehub.common.result.Result;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
@@ -14,4 +17,8 @@ public interface AuthClient {
     /** 查用户实名状态（0 未认证 / 1 已认证 / 2 驳回） */
     @GetMapping("/internal/real-name-status")
     Result<Integer> getRealNameStatus(@RequestParam("userId") Long userId);
+
+    /** 上报管理端操作审计（见 D-07）；失败只记日志，不影响主业务 */
+    @PostMapping("/internal/operation-log")
+    Result<Void> saveOperationLog(@RequestBody OperationLogRequest req);
 }

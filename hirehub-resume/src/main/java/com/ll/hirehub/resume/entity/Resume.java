@@ -29,6 +29,8 @@ public class Resume {
     private Integer status;
     private Integer parseStatus;
     private Long attachmentId;
+    /** MinIO 对象键（二期：简历附件预签名直传，见 §6.6） */
+    private String attachmentKey;
 
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
