@@ -26,8 +26,14 @@
 
     <properties>
         <java.version>17</java.version>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <!--
+          ★ 用 -release 而不是 -source/-target：
+          本机 JAVA_HOME=E:\\jdk21，只写 -source/-target 17 时 javac 仍能看到 JDK 18~21 的 API，
+          代码里误用（如 List.getFirst()、StringBuilder.repeat）编译期能过、跑到 JDK 17 上就炸，
+          Maven 还会一直警告「未与 -source 17 一起设置系统模块路径」。
+          maven-compiler-plugin 识别 maven.compiler.release，会传 -release 17，把 API 签名锁死在 17。
+        -->
+        <maven.compiler.release>${java.version}</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- 求新路线（D-03）：官方版本矩阵 Spring Boot 3.5.0 ↔ Spring Cloud 2025.0.0 ↔ SCA 2025.0.0.0 -->
@@ -132,6 +138,15 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
+        <!--
+          单元测试：JUnit 5 + AssertJ + Mockito（版本由 spring-boot-dependencies BOM 管理）。
+          test scope 不传递给依赖方，所以放进根 pom 是安全的。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -187,6 +202,18 @@
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
+            </plugin>
+            <!--
+              ★ 必须显式指定 surefire 3.x：
+              本项目未继承 spring-boot-starter-parent，插件版本不会自动被管理；
+              而 Maven 默认绑定的 surefire 2.x 不认识 JUnit 5（junit-platform），
+              结果是 **一个用例都不执行**却报 BUILD SUCCESS ——
+              输出里是「Tests run: 0」，看起来"全绿"，其实测试根本没跑。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.2</version>
             </plugin>
         </plugins>
     </build>

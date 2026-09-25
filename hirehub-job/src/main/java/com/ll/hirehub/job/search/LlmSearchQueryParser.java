@@ -105,6 +105,12 @@ public class LlmSearchQueryParser implements SearchQueryParser {
             intent.setSalaryMax(intOrNull(j, "salaryMax"));
             intent.setEducation(textOrNull(j, "education"));
             intent.setExperience(textOrNull(j, "experience"));
+            // ★ 成功必须留痕：否则"LLM 到底跑没跑"从外部完全看不出来 ——
+            // 降级路径有 warn，成功路径却没有日志，于是"接口返回了结果"既可能是真调了模型，
+            // 也可能是静默降级成了关键词搜索。可解释、可降级的前提是**可观测**。
+            log.info("[NL 搜索] LLM 解析成功: keyword={} city={} salary={}-{} education={} experience={}",
+                    intent.getKeyword(), intent.getCity(), intent.getSalaryMin(), intent.getSalaryMax(),
+                    intent.getEducation(), intent.getExperience());
         } catch (Exception e) {
             log.warn("LLM 解析异常，降级为原始关键词: {}", e.getMessage());
             intent.setKeyword(query);

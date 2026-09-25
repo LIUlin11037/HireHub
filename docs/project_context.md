@@ -1,12 +1,13 @@
 # HireHub 项目上下文（会话压缩版）
 
 > 用途：新会话喂这一个文件即可恢复上下文，替代长对话历史。
-> 生成时点：**三期执行中**（一期端到端全绿；二期 14/15 已验证、Docker 全栈待跑；三期 M0 完成 1/4、M1–M3 代码完成待编译验证）。
+> 生成时点：**三期已收尾（M0–M5 全部完成）**。一期端到端全绿；二期全部完成；三期 M0–M5 全绿，
+> 四个验证脚本均已实测通过；中间件（含 RabbitMQ）全部容器化。
 
 ## ⚠️ 新会话必读（最高优先级）
 
 1. **动手前必须先通读下面三份文档**（硬性要求，不要只靠本文件）：
-   - `docs/关键决策记录.md`：**35 条 ADR** + 待定事项 Q-01~Q-09（**Q-03/Q-05/Q-07 已决议**）。**已定的照做；待定的不得擅自决定，必须先和用户讨论。**
+   - `docs/关键决策记录.md`：**37 条 ADR** + 待定事项 Q-01~Q-09（**Q-03/Q-05/Q-07/Q-08 已决议落地**）。**已定的照做；待定的不得擅自决定，必须先和用户讨论。**
    - `docs/架构与实施文档.md`：分期计划、链路设计、接口清单、版本约束。
    - `docs/踩坑记录.md`——里面是反复踩过的坑和最终解法，别重复踩。
 2. **踩坑先查** `docs/踩坑记录.md`——里面是反复踩过的坑和最终解法，别重复踩。
@@ -76,6 +77,8 @@
 | D-33 | **服务内方法级鉴权**：引 Security + Header 过滤器构 `SecurityContext` + 过滤器链**全 permitAll** + `@PreAuthorize` |
 | D-34 | **WebSocket 站内消息**：并入 notification；一次性 `ws-ticket`；Redis Pub/Sub 多实例路由 |
 | D-35 | **管理端审计日志**：集中存 auth `sys_operation_log`，内部接口上报，`trace_id` 与链路打通 |
+| D-36 | **中间件全容器化**：RabbitMQ 纳入编排；用**专用非 guest 账号**（guest 只允许 loopback）；凭据在 broker/编排/yml 三处一致；切账号必须先删数据卷 |
+| D-37 | **测试策略**：单测管"纯逻辑 + 边界"（状态机/JWT/校验算法/缓存回归），脚本管"跨服务链路"；**必须显式钉 surefire 3.x**；不做 `@SpringBootTest` 与 Testcontainers |
 
 完整版见 `docs/关键决策记录.md`；架构细节见 `docs/架构与实施文档.md`。
 
@@ -114,6 +117,8 @@ SQL：`sql/init-databases.sql` + 7 个 `*-schema.sql`
 | MySQL | docker `hirehub-mysql`，**宿主端口 3307**（不是 3306） |
 | Redis | `hirehub-redis` 6379 |
 | Nacos | `hirehub-nacos` v3.0.3，8848 / 9848 / 9849 / **8080 控制台**，**已开启鉴权** |
+| RabbitMQ | `hirehub-rabbitmq`（`rabbitmq:3.13.7-management`）5672 / 15672，账号 **`hirehub`**（默认密码见 compose，**不是 `guest`**） |
+| ES / MinIO | `hirehub-es` 9200（green） / `hirehub-minio` 9010(S3)+9011(控制台)，`minioadmin/minioadmin`，桶 `resume` |
 | 管理员账号 | `admin` / `admin123` |
 | 测试身份证 | `110101199003078515`（校验位可过） |
 | 测试信用代码 | `913100001234567896`（GB 32100 可过） |
@@ -133,25 +138,81 @@ SQL：`sql/init-databases.sql` + 7 个 `*-schema.sql`
 
 **二期（产物已完成，全栈启动待端口交接）**：全部服务 Docker 化——`docker/Dockerfile`（通用镜像，auth 镜像已验证可构建）、`docker/docker-compose-services.yml`（8 服务 + healthcheck + depends_on 启动顺序 + mem_limit + host.docker.internal 中间件访问）。本地 9000-9007 被 IDE 占用，跑全栈需先停 IDE 服务再 `docker compose -f docker/docker-compose-services.yml up -d --build`。
 
-**一期已决策但代码未落地（三期补课，代码已完成待验证）**：D-02 双 token + refresh 轮换 + jti 黑名单、D-06 `/me/identities` + 成员缓存、D-07 `@PreAuthorize` + job 管理端 + `sys_operation_log`、D-23 求职者隐私模型。**均已写完代码，但一行都没编译过。**
+**一期已决策但代码未落地（三期补课，代码已完成待验证）**：D-02 双 token + refresh 轮换 + jti 黑名单、D-06 `/me/identities` + 成员缓存、D-07 `@PreAuthorize` + job 管理端 + `sys_operation_log`、D-23 求职者隐私模型。**均已写完代码并编译通过。**
 
 **三期执行状态**（里程碑编号以 `docs/第三期计划.md` §1 为准，旧版编号已废弃）：
 
 | 里程碑 | 状态 |
 |---|---|
-| M0 二期收尾 | 🔄 1/4 —— 0.4 `job_index` **已实测 green**；0.1 Docker 全栈 / 0.2 Sentinel 限流 / 0.3 traceId **待你操作** |
-| M1 认证可撤销（D-02） | 🔄 代码完成 |
-| M2 身份与审计（D-06 / D-07） | 🔄 代码完成 |
-| M3 隐私与解析（D-23 / Q-03） | 🔄 代码完成 |
-| M4 实时（面试提醒 / WebSocket） | ⬜ 未开始 |
-| M5 收口（压测 / RabbitMQ 入 compose / Q-08 / 文档同步） | ⬜ 未开始 |
+| M0 二期收尾 | ✅ **4/4 完成（全部实测）**：0.1 Docker 全栈（8 容器 healthy + 容器内 E2E **49/49**）、0.2 限流（容器内 150 并发 → **100×401+50×429**）、0.3 traceId（容器日志非空）、0.4 ES green |
+| M1 认证可撤销（D-02） | ✅ **已实测通过**（`scripts/phase3-verify.ps1`） |
+| M2 身份与审计（D-06 / D-07） | ✅ **已实测通过**（非管理员 3 个管理端接口全 403/20003；审计含 traceId） |
+| M3 隐私与解析（D-23 / Q-03） | ✅ **已实测通过**（匿名 + 同意 + 屏蔽优先于同意 + 留痕；真实 PDF 解析 → skills/手机号回填，坏文件 `parseStatus=3` 带原因） |
+| M4 实时（面试提醒 / WebSocket） | ✅ **已实测通过**（TTL+DLX 真延迟 60s 送达两档提醒；WS: ticket→握手→CONNECTED→PING/PONG→实时推送→ticket 一次性） |
+| M5 收口（压测 / RabbitMQ 入 compose / Q-08 / 文档同步） | ✅ **4/4 完成**：压测 ✅ `docs/压测报告.md`（42320 请求 0 错误）；RabbitMQ 入 compose ✅ **已切换**（节点 `rabbit@hirehub-rabbitmq`、9 队列 / 11 绑定、6 条连接以 `hirehub` 账号接入）；Q-08 ✅ 复核 + 岗位联动下线（MQ 主路径 + 兜底对账，`scripts/phase3c-verify.ps1`）；文档 ✅ ADR D-36 + 踩坑 #32~#36 + 架构文档 §6.10 / §9 / §10 同步 |
 
-**本轮实测结论（重要）**：0.2 那条**限流确实没生效** —— 40 并发 / 约 575 QPS 打 `/api/auth/login`，全 401、**0 个 429**。根因是 Nacos 里没有 `hirehub-gateway-flow` 这条配置（`config/sentinel/` 下的 json 只是留档，不会自动发布）。Nacos 3.0 脚本推送走不通，**只能控制台手动加**，见 `踩坑记录.md` #17。
+**三期已完成的关键实测（都有硬证据）**：
+- **限流**：`Nacos` 里 `hirehub-gateway-flow`（`rule-type: gw-flow`, `count: 100`）→ 150 并发得到 **100×401 + 50×429**。排查踩了三个连环坑，见 `踩坑记录.md` #20。
+- **traceId**：**二期的"全链路 traceId"一直是断的** —— 8 个服务里只有 auth 引了 `spring-boot-starter-actuator`，缺它则 `Tracer` bean 不存在。补上后容器日志出现非空 `[hirehub-delivery,6ab5d88f…,121b6b3e…]`（踩坑记录 #19）。
+- **Docker 全栈**：`mvn -DskipTests package` → `docker compose -f docker/docker-compose-services.yml up -d` → 8 服务 healthy → E2E **49/49**。
+- **注意**：当前服务跑在**容器**里（`restart: unless-stopped`）。要回 IDEA 开发需先 `docker compose -f docker/docker-compose-services.yml down`。
 
-**需要用户操作的事项**（沙箱与工作区限制，我做不了，见 `踩坑记录.md` #10 / #18）：
-1. 在 IDEA 编译并启动 8 个服务（沙箱会杀掉由我派生的、绑定监听端口的 java 进程）
-2. 按库执行 `sql/phase3-migration.sql`（`hirehub_auth` / `hirehub_resume`）
-3. Nacos 控制台 `8080` 加 `hirehub-gateway-flow`（`rule-type` = `gw-flow`）
-4. Docker 全栈需先停 IDEA 服务腾出 9000–9007
+**需要用户操作的事项（现已基本消解）**：
+1. ~~在 IDEA 启动 8 个服务~~ → **不需要了**，8 个服务已全部容器化运行；要回 IDEA 才需 `docker compose -f docker/docker-compose-services.yml down`。
+2. ~~增量 SQL~~ → 已并入 `sql/phase3-migration.sql`（文件内 `USE` 分段，一条命令）。
+3. **`NACOS_PASSWORD` 必须注入**（本机 Nacos 客户端密码**不是默认的 `nacos`**，见踩坑记录 #26）——
+   已固化在 `docker/.env`（gitignore），compose 自动读取。
+4. **内存**：14 个容器约 5.9 GB（ES 1.2G + Nacos 1.0G 最大）。**关 IDEA / 动态壁纸 / 多余浏览器标签比停容器更划算**。
 
-**下一步**：M4（面试提醒 TTL+DLX、WebSocket 并入 notification）→ M5 收口；每批改动后跑 `scripts/e2e-verify.ps1 -Fresh` 保证一期 **49/49 不回归**。
+**验证脚本**（五个，都要跑绿）：
+- `scripts/e2e-verify.ps1 -Fresh` —— 一期业务闭环，**49/49**
+- `scripts/phase3-verify.ps1` —— 三期新增能力（D-02 / D-06 / D-07 / D-23），**54/54**
+- `scripts/phase3b-verify.ps1` —— 需先跑 `e2e-verify.ps1 -Fresh` 造数据并 tee 到 `logs/e2e-setup.log`，
+  它验证**简历解析真实文件链路 / 面试提醒 TTL+DLX 真延迟 / WebSocket**，**22/22**
+- `scripts/phase3c-verify.ps1` —— **Q-08 企业认证复核 + 岗位联动下线**（正例 / MQ 生效证据 / 负例 / 幂等 / 鉴权 / 审计）；
+  需要 `docker exec hirehub-mysql` 改夹具（企业名改成 `-REVOKED`），**34/34**
+- `scripts/phase3d-verify.ps1` —— **面试状态机全量迁移**（确认 / 拒绝 / 取消（两角色）/ 改期 / 完成 + 终态阻断 +
+  事件级角色规则 + 局外人 403 + **D-28 面试事件不回退投递**）；同样依赖 `logs/e2e-setup.log`，**36/36**
+
+**单元测试**（`mvn test`，**零容器依赖、秒级**，见 D-37）：
+
+- 合计 **44 个用例 / 0 失败**：`JwtUtilTest` 7、`MockCompanyVerifierTest` 4、`CreditCodeUtilTest` 7、
+  `JobCacheServiceTest` 7、`DeliveryStateMachineTest` 7、`InterviewStateMachineTest` 12。
+- 覆盖：两个状态机的**全量迁移 + 全量终态 + 事件级角色规则 + 校验顺序**、JWT 三条安全约定、
+  GB 32100 校验位真算法、Mock 核验的两条分支、以及**缓存锁 bug 的回归钉**。
+- ⚠️ **必须显式钉 `maven-surefire-plugin` 3.x**：默认绑定的 surefire 2.x 不认识 JUnit 5，
+  会「**一个用例都不跑却报 BUILD SUCCESS**」（`Tests run: 0`），见踩坑 #38。
+- 明确**不做** `@SpringBootTest` 与 Testcontainers（与脚本覆盖面重叠，投入产出比低）。
+
+**接口覆盖对照**（`.\scripts\api-coverage.ps1`，从源码枚举 + 对照脚本调用，有未覆盖则非零退出）：
+
+> **实测：75 个接口 = COVERED 67 + `/internal/**` 8 + UNCOVERED 0。**
+
+一度是 `UNCOVERED 10`（见踩坑 #40：当时我用"补了已知的两个缺口"代替了枚举核对）。这 10 个已由
+**`scripts/phase3e-verify.ps1`（29/29）** 补齐：公司搜索、法人授权令牌（D-24 第三层）、邀请码→加入、
+HR 自行下线、通知已读/全部已读、手工刷新简历索引、Swagger UI 重定向、自然语言搜索。
+
+> **口径说明**：`GET /api/job/search/nl` 的 **LLM 分支已实测通过**（2026-09-25，容器内实跑，非推断）：
+>
+> ```
+> [NL 搜索] LLM 解析成功: keyword=Java 后端 city=杭州 salary=30000-null education=本科 experience=null
+> ```
+>
+> 输入 `杭州 30k 以上 本科 Java 后端` → 城市/薪资下限/学历均正确抽出，keyword 收敛为「Java 后端」。
+> 这**排除了降级路径**（降级会把整句塞进 keyword、其余字段全 null），证明 `qwen3.7-plus` 模型名与 key 均有效。
+>
+> 仍需注意的只是**可观测性**：该解析器在「未配 key / 非 200 / 抛异常」时都只 `log.warn` 后降级，
+> 所以仅看"接口返回 200"无法区分主路径与降级（见踩坑 #41）。成功路径已补 INFO 日志，可用
+> `[NL 搜索] LLM 解析成功` 直接判定。**自动化脚本（phase3e）只覆盖无 key 的降级分支。**
+
+> `/internal/**` 的 8 个不由网关路由，是在 E2E 流程中**经 Feign 间接走到**的
+> （审计上报、站内信、实名状态、企业成员校验等都因此得到验证）。
+
+**本会话最后修的运行时缺陷**：
+- **`JobCacheService` 击穿锁 bug**（踩坑 #36）：锁只靠 TTL 释放 + 抢不到锁时返回 `null` →
+  「读 → 写 evict → 立刻再读」会误报 `10004 资源不存在`。修法：`finally` 主动 compare-and-delete 释放 + 抢不到锁落 DB 兜底。
+- **MinIO 健康检查**：镜像里没有 `curl`，健康检查恒 `unhealthy`（假红），改成 `/dev/tcp` 探测。
+
+**下一步（可选）**：
+- 若要把三期成果做成演示材料：`docs/端到端验证.md` ①–⑧ 手工路径 + 四个脚本即为验收清单。
+- **遗留未做**：Q-04（SkyWalking，暂不引）、Q-01/Q-02（独立搜索服务 / Canal，均不做）、Q-06（订单体系，不做）、Q-09（求职者强制实名，不强制）。

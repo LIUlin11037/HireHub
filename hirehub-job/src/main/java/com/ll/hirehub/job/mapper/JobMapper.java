@@ -10,6 +10,15 @@ import java.util.Map;
 public interface JobMapper extends BaseMapper<Job> {
 
     /**
+     * 有在招职位的企业 ID（去重）。
+     * <p>
+     * 给"企业认证撤销 → 岗位批量下线"的兜底对账用（见 Q-08）：先拿到候选企业，
+     * 再逐个向 company 核实认证状态——**不能跨库 JOIN**（D-13），所以只能用这种两段式。
+     */
+    @Select("SELECT DISTINCT company_id FROM job WHERE status = 1 AND deleted = 0")
+    List<Long> selectCompanyIdsWithOnlineJobs();
+
+    /**
      * 管理端统计（见 D-07）用的聚合查询。
      * <p>
      * 聚合放到 SQL 里做：把全表拉到内存里 count 在数据量上来后是灾难，

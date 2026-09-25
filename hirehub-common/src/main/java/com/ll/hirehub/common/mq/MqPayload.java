@@ -112,4 +112,17 @@ public final class MqPayload {
 
         private List<Long> receiverIds;
     }
+
+    /**
+     * 企业认证被撤销：{@code company.verify-revoked} 的负载（见 Q-08）。
+     * <p>
+     * 只带 companyId 与原因 —— job 侧据此把该企业的在招职位批量下线。
+     * 岗位清单由 job 自己查（job 表归它），不塞进消息里，避免消息体随岗位数增长。
+     */
+    @Data
+    public static class CompanyVerifyRevoked implements Serializable {
+        private Long companyId;
+        /** 撤销原因，会写进 job.offline_reason，便于"岗位为什么下线"可追溯 */
+        private String reason;
+    }
 }

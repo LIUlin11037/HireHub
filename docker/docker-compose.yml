@@ -1,6 +1,6 @@
-# HireHub 一期中间件编排：MySQL / Redis / Nacos
-# 服务本身在 IDE 运行，中间件用 Docker 起
-# 端口规划见 docs/架构与实施文档.md §3.2（Nacos 3.0 控制台独立到 8080，避开网关 9000）
+# HireHub 中间件编排：MySQL / Redis / Nacos / ES / MinIO / RabbitMQ
+# 一份编排起全部中间件；8 个服务由 docker-compose-services.yml 起。
+# 端口规划见 docs/架构与实施文档.md §3.2 / §9.1（Nacos 3.0 控制台独立到 8080，避开网关 9000）
 services:
   mysql:
     image: mysql:8.0
@@ -42,7 +42,12 @@ services:
     restart: unless-stopped
     environment:
       MODE: standalone
-      NACOS_AUTH_ENABLE: "true"
+      # ⚠️ 本地开发关闭鉴权。原因见下：Nacos 的用户表存在容器内嵌存储里，
+      #    一旦换成本地默认鉴权，重建容器就会把用户清掉，导致所有服务注册 401 崩循环；
+      #    而且 Nacos 3.0 的 HTTP 登录接口在本机恒返回 500（见踩坑 #26），没法用 API 修复。
+      #    要恢复"开鉴权"：置为 "true"，重建 Nacos，然后到控制台 http://localhost:8080
+      #    设一次密码，并把同一个值写进 docker/.env 的 NACOS_PASSWORD。
+      NACOS_AUTH_ENABLE: "false"
       JVM_XMS: 512m
       JVM_XMX: 512m
       JVM_XMN: 256m
@@ -55,6 +60,11 @@ services:
       - "9848:9848"    # 客户端 gRPC（必须放行）
       - "9849:9849"    # 服务端间 gRPC
       - "8080:8080"    # 控制台（Nacos 3.0 独立端口，不再是 8848/nacos）
+    # ★ 必须挂卷（见踩坑 #42）：不挂卷时每次 `docker compose down` + `up`
+    #   都会重建容器并清空内嵌 Derby —— 丢掉**用户表**（→ 全栈注册 401 崩循环）
+    #   和**存在 Nacos 里的配置**（→ Sentinel 限流规则静默消失，且无任何脚本会发现）。
+    volumes:
+      - nacos-data:/home/nacos/data
     # healthcheck 待实际运行验证后补充（Nacos 3.0 健康端点与 2.x 不同）
 
   # ---------- 二期：Elasticsearch（职位/公司搜索，见架构文档 §6.3 / §9.1） ----------
@@ -94,13 +104,63 @@ services:
     volumes:
       - minio-data:/data
     mem_limit: 256m
+    # ⚠️ 别用 curl：MinIO 镜像里**没有** curl，健康检查会恒定 unhealthy（假红），
+    #    服务其实完全正常。镜像内实测可用的是 `mc` / `bash` / `timeout`。
+    #    见踩坑记录 #35。
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD-SHELL", "timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000' || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
+
+  # ---------- 三期：RabbitMQ 纳入编排（见 M5.2 / D-08） ----------
+  #
+  # 二期时 RabbitMQ 是本机原生跑的，其余中间件都在容器里 —— 一份编排起不全栈。
+  # 这里补齐，使 `docker compose -f docker/docker-compose.yml up -d` 一次拉起**全部中间件**。
+  #
+  # ⚠️ 切换前必须先停掉本机原生的 RabbitMQ，否则 5672 端口冲突
+  #    （Windows 上通常是服务 `RabbitMQ`，`Stop-Service RabbitMQ` 需管理员权限）。
+  #    切换后队列声明由各服务启动时自动重建（拓扑在代码里声明，不在 broker 里手工建）。
+  #
+  # ⚠️ 不能再用 `guest`：RabbitMQ 默认禁止 guest 从非 loopback 连接。
+  #    二期能跑通，是因为 broker 在**宿主机**、服务连 `host.docker.internal` 落到宿主机 loopback；
+  #    broker 进容器后源地址变成 docker 网桥网关，`guest` 必然 ACCESS_REFUSED。
+  #    故此处建**专用账号**，服务侧同步配置凭据（见 docker-compose-services.yml / 各服务 application.yml）。
+  #    见踩坑记录 #33、ADR D-36。
+  #
+  # ⚠️ 改这两个变量对**已初始化**的数据卷无效（只在首次建卷时生效）。
+  #    从 guest 切过来必须先 `docker volume rm docker_rabbitmq-data`，否则只会保留 guest-only 用户，
+  #    表现为「切换成功但连接仍被拒」。见踩坑记录 #34。
+  #
+  # 服务侧仍通过 `host.docker.internal:5672` 访问（compose 已发布该端口），
+  # 与本项目其它中间件的访问方式保持一致 —— 两个 compose 文件属于不同 project，
+  # 默认不在同一网络里，用服务名互相解析反而不可靠。
+  rabbitmq:
+    image: rabbitmq:3.13.7-management   # 固定 tag：镜像源对 latest 会 403（见踩坑记录 #8）
+    container_name: hirehub-rabbitmq
+    restart: unless-stopped
+    hostname: hirehub-rabbitmq          # 固定 hostname，避免容器重建后节点名变化导致数据目录不可用
+    environment:
+      # 本地开发默认值，可用环境变量 / docker/.env 覆盖（不涉及任何真实密钥）
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-hirehub}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-hirehub123}
+    ports:
+      - "5672:5672"     # AMQP
+      - "15672:15672"   # 管理控制台（本地默认 hirehub/hirehub123）
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
 volumes:
   mysql-data:
   es-data:
   minio-data:
+  rabbitmq-data:
+  # ★ Nacos 的用户表与配置都存在这里（见踩坑 #42：不挂卷就会在重建时丢光）
+  nacos-data:

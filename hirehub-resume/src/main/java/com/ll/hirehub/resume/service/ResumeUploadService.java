@@ -6,6 +6,7 @@ import com.ll.hirehub.common.mq.MqMessage;
 import com.ll.hirehub.common.mq.MqPayload;
 import com.ll.hirehub.common.result.ResultCode;
 import com.ll.hirehub.resume.entity.Resume;
+import com.ll.hirehub.resume.config.MinioConfig;
 import com.ll.hirehub.resume.mapper.ResumeMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.minio.BucketExistsArgs;
@@ -42,7 +43,15 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class ResumeUploadService implements ApplicationRunner {
 
+    /** 服务端自身访问 MinIO（建桶、下载附件解析） */
     private final MinioClient minioClient;
+
+    /**
+     * 预签名专用客户端：走"对客户端可达"的地址。
+     * 容器化时服务走 host.docker.internal、浏览器走 localhost，两者不能混用（见 MinioConfig）。
+     */
+    private final MinioConfig.PresignClient minioPresignClient;
+
     private final ResumeMapper resumeMapper;
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
@@ -67,7 +76,9 @@ public class ResumeUploadService implements ApplicationRunner {
         requireOwn(userId, resumeId);
         String objectKey = "resume/" + resumeId + "/" + UUID.randomUUID().toString().replace("-", "") + ".pdf";
         try {
-            String url = minioClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+            // 用预签名客户端（而非服务端读写客户端）：URL 里的主机名要参与签名，
+            // 必须一开始就用客户端能解析的地址，签发后换主机名会让签名失效。
+            String url = minioPresignClient.client().getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
                     .method(Method.PUT)
                     .bucket(bucket)
                     .object(objectKey)

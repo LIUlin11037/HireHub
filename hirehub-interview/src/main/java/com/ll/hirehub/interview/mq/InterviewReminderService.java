@@ -77,6 +77,14 @@ public class InterviewReminderService {
                     interview == null ? null : interview.getId());
             return;
         }
+        // 面试时间已过 / 状态不可提醒（历史数据、测试夹具、时钟漂移）→ 一条都不排。
+        // 少了这道判断，下面的 `delayMs <= 0` 分支会"立即补发"一场早已结束的面试的提醒
+        // —— 实测中 2026-01-15 那场面试（相对当前时间已过去）就被发出了两条提醒。
+        if (!stillValid(interview)) {
+            log.info("面试时间已过或状态不可提醒，跳过提醒排布: interviewId={} time={} status={}",
+                    interview.getId(), interview.getInterviewTime(), interview.getStatus());
+            return;
+        }
         LocalDateTime now = LocalDateTime.now();
         String token = UUID.randomUUID().toString().replace("-", "");
         for (Map.Entry<String, Duration> entry : TIERS.entrySet()) {

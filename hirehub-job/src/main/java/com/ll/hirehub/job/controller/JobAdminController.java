@@ -4,6 +4,7 @@ import com.ll.hirehub.api.AuthClient;
 import com.ll.hirehub.api.dto.OperationLogRequest;
 import com.ll.hirehub.common.result.Result;
 import com.ll.hirehub.job.service.JobAdminService;
+import com.ll.hirehub.job.mq.CompanyRevokeService;
 import com.ll.hirehub.job.vo.JobStatisticsVO;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -29,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class JobAdminController {
 
     private final JobAdminService jobAdminService;
+    private final CompanyRevokeService companyRevokeService;
     private final AuthClient authClient;
 
     /** 下架违规职位（管理员） */
@@ -48,6 +51,22 @@ public class JobAdminController {
     @PreAuthorize("hasRole('PLATFORM_ADMIN')")
     public Result<JobStatisticsVO> statistics() {
         return Result.ok(jobAdminService.statistics());
+    }
+
+    /**
+     * 企业认证失效的兜底对账（见 Q-08）：把"企业认证已不是通过"的企业在招职位批量下线。
+     * <p>
+     * 主路径是 MQ 事件；这里是消息丢失时的补偿入口，也给排障用（不必等定时任务）。
+     *
+     * @return 本轮下线的职位数
+     */
+    @PostMapping("/reconcile-company-status")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
+    public Result<Integer> reconcileCompanyStatus(@RequestHeader("X-User-Id") Long operatorId,
+                                                 HttpServletRequest httpRequest) {
+        int offlined = companyRevokeService.reconcile();
+        audit(operatorId, "COMPANY_RECONCILE", null, "offlined=" + offlined, httpRequest);
+        return Result.ok(offlined);
     }
 
     /** 审计旁路：失败只记日志，不影响下架本身 */

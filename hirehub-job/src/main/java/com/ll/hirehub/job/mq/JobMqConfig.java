@@ -53,6 +53,17 @@ public class JobMqConfig {
         return BindingBuilder.bind(jobSearchQueue).to(hirehubExchange).with(MqConst.RK_JOB_DELETE);
     }
 
+    /** 三期：企业认证被撤销 → 批量下线该企业岗位（见 Q-08） */
+    @Bean
+    public Queue jobCompanyRevokeQueue() {
+        return QueueBuilder.durable(MqConst.QUEUE_JOB_COMPANY_REVOKE).build();
+    }
+
+    @Bean
+    public Binding jobCompanyRevokeBinding(Queue jobCompanyRevokeQueue, TopicExchange hirehubExchange) {
+        return BindingBuilder.bind(jobCompanyRevokeQueue).to(hirehubExchange).with(MqConst.RK_COMPANY_REVOKED);
+    }
+
     @Bean
     public MessageConverter jacksonMessageConverter(ObjectMapper objectMapper) {
         return new Jackson2JsonMessageConverter(objectMapper);

@@ -3,6 +3,7 @@ package com.ll.hirehub.common.exception;
 import com.ll.hirehub.common.result.Result;
 import com.ll.hirehub.common.result.ResultCode;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.ErrorResponse;
@@ -17,9 +18,15 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * 因为 hirehub-common 同时被 WebFlux 网关和 MVC 服务复用。
  * Spring 自带的客户端异常统一通过 {@link ErrorResponse} 取状态码，
  * 这样就不必在 common 里引入 servlet API。
+ * <p>
+ * <b>但"被复用"不等于"该在网关里生效"</b>：网关组件扫描 {@code com.ll.hirehub}，会把本类
+ * 一起装配进 WebFlux 上下文，于是网关内部任何异常（如 Sentinel 的 BlockException）都会被
+ * 改写成 {@code code=10002} 的 HTTP 500，「请求过于频繁」被伪装成「系统繁忙」，
+ * 排障时完全看不出真相（踩坑记录 #20）。所以限定只在 <b>Servlet</b> 应用里注册。
  */
 @Slf4j
 @RestControllerAdvice
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class GlobalExceptionHandler {
 
     /** 业务异常：HTTP 状态由错误码决定，前端既可看 status 也可看 body.code */

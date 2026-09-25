@@ -11,6 +11,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -52,7 +53,9 @@ public class JobCacheService {
             return EMPTY.equals(raw) ? null : read(raw);
         }
         // ② 击穿：加互斥锁，只放一个线程重建
-        if (redisLock.tryLock("lock:" + key, Duration.ofSeconds(30))) {
+        String lockKey = "lock:" + key;
+        String token = UUID.randomUUID().toString();
+        if (redisLock.tryLock(lockKey, token, Duration.ofSeconds(30))) {
             try {
                 raw = redisTemplate.opsForValue().get(key);   // double-check
                 if (raw != null) {
@@ -68,7 +71,10 @@ public class JobCacheService {
                 redisTemplate.opsForValue().set(key, write(job), jittered(BASE_TTL));
                 return job;
             } finally {
-                // 锁靠 TTL 自动释放，无需手动删（见 RedisLock）
+                // 重建结束立刻主动释放：锁只该保护"重建"这一小段。
+                // 若只靠 TTL 干等 30s，期间任何一次 evict 都会让后续读请求抢不到锁、
+                // 又读到空缓存，把「缓存里没有」误判成「职位不存在」（见踩坑 #36）
+                redisLock.unlock(lockKey, token);
             }
         }
         // 没抢到锁：别人正在重建，短暂等待后读一次缓存
@@ -78,7 +84,14 @@ public class JobCacheService {
             Thread.currentThread().interrupt();
         }
         raw = redisTemplate.opsForValue().get(key);
-        return raw == null ? null : (EMPTY.equals(raw) ? null : read(raw));
+        if (raw != null) {
+            return EMPTY.equals(raw) ? null : read(raw);
+        }
+        // 仍然没有 → 落 DB 兜底，绝不返回 null。
+        // 「缓存为空」和「记录不存在」是两件事：调用方（JobService.get）把 null 当
+        // 「资源不存在」直接抛 10004，所以这里返回 null 会让一个真实存在的职位 404。
+        // 多打一次 DB 只是慢一点，误报 404 是错的（本次实测踩到，见踩坑 #36）
+        return jobMapper.selectById(id);
     }
 
     /** 职位变更（上线/下线/删除）后主动失效缓存，避免读到旧状态 */

@@ -6,6 +6,7 @@ import com.ll.hirehub.common.result.Result;
 import com.ll.hirehub.company.dto.AdminVerifyRequest;
 import com.ll.hirehub.company.entity.Company;
 import com.ll.hirehub.company.service.CompanyService;
+import com.ll.hirehub.company.service.CompanyRecheckService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,7 @@ import java.util.List;
 public class CompanyAdminController {
 
     private final CompanyService companyService;
+    private final CompanyRecheckService companyRecheckService;
     private final AuthClient authClient;
 
     @PostMapping("/{id}/verify")
@@ -52,6 +54,23 @@ public class CompanyAdminController {
     @PreAuthorize("hasRole('PLATFORM_ADMIN')")
     public Result<List<Company>> listPending() {
         return Result.ok(companyService.listPending());
+    }
+
+    /**
+     * 手工触发一轮企业认证定期复核（见 Q-08）。
+     * <p>
+     * 定时任务每天凌晨跑一次；这个入口是给运维/排障用的——复核是"认证会过期"这条机制的落地，
+     * 出问题时必须能立刻跑一轮看结果，而不是等到明天凌晨。
+     *
+     * @return 本轮被撤销认证的企业数
+     */
+    @PostMapping("/recheck")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
+    public Result<Integer> recheck(@RequestHeader("X-User-Id") Long operatorId,
+                                  HttpServletRequest httpRequest) {
+        int revoked = companyRecheckService.recheckOnce();
+        audit(operatorId, "COMPANY_RECHECK", null, "revoked=" + revoked, httpRequest);
+        return Result.ok(revoked);
     }
 
     /**

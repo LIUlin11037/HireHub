@@ -38,6 +38,8 @@ public final class MqConst {
     public static final String RK_INTERVIEW_REMIND = "interview.remind";
     /** 三期：面试提醒 → 站内通知（interview 校验后转发，notification 服务消费） */
     public static final String RK_INTERVIEW_REMIND_NOTIFY = "interview.remind.notify";
+    /** 三期：企业认证被撤销（定期复核发现注销）→ 该企业岗位批量下线（见 Q-08） */
+    public static final String RK_COMPANY_REVOKED = "company.verify-revoked";
 
     // ---------- 队列 ----------
     public static final String QUEUE_JOB_DELIVERY = "hirehub.job.delivery";
@@ -53,6 +55,8 @@ public final class MqConst {
     public static final String QUEUE_INTERVIEW_REMIND_DELAY = "hirehub.interview.remind.delay";
     /** 三期：面试提醒消费队列（interview 服务自消费，校验面试仍有效后转发通知） */
     public static final String QUEUE_INTERVIEW_REMIND = "hirehub.interview.remind";
+    /** 三期：企业认证撤销 → job 批量下线该企业岗位（见 Q-08 状态联动） */
+    public static final String QUEUE_JOB_COMPANY_REVOKE = "hirehub.job.company-revoke";
 
     /** 业务类型 */
     public static final class BizType {
@@ -75,6 +79,8 @@ public final class MqConst {
         public static final String RESUME_PARSE = "RESUME_PARSE";
         /** 面试提醒（延迟消息到期 / 兜底扫描 → 站内通知） */
         public static final String INTERVIEW_REMIND = "INTERVIEW_REMIND";
+        /** 企业认证被撤销 → job 批量下线该企业岗位（见 Q-08 / D-18） */
+        public static final String COMPANY_VERIFY_REVOKED = "COMPANY_VERIFY_REVOKED";
     }
 
     /** 消费者标识，写进 mq_consume_log 便于排查 */
@@ -92,5 +98,7 @@ public final class MqConst {
         public static final String RESUME_PARSE = "resume-parse";
         /** 面试提醒消费者 */
         public static final String INTERVIEW_REMIND = "interview-remind";
+        /** 企业认证撤销消费者（job 批量下线岗位） */
+        public static final String JOB_COMPANY_REVOKE = "job-company-revoke";
     }
 }

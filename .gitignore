@@ -37,3 +37,5 @@ application-local.properties
 
 ### 鏁版嵁鐩綍 ###
 data/
+# 本机 Nacos 客户端密码（compose 读取，不进仓库）
+docker/.env

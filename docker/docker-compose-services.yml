@@ -1,7 +1,7 @@
 # HireHub 二期：8 个服务全部容器化
 #
-# 依赖的中间件（MySQL/Redis/Nacos/ES/MinIO）由 docker-compose.yml 起；
-# RabbitMQ 本机原生运行。容器统一通过 host.docker.internal 访问宿主机上的中间件。
+# 依赖的中间件（MySQL/Redis/Nacos/ES/MinIO/RabbitMQ）由 docker-compose.yml 起；
+# 容器统一通过 host.docker.internal 访问宿主机上已发布的中间件端口。
 #
 # 用法：
 #   1) 先确保 fat jar 已构建：mvn -DskipTests package
@@ -20,9 +20,18 @@ x-service-common: &service-common
     TZ: Asia/Shanghai
     # 中间件都在宿主机上
     SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: host.docker.internal:8848
-    SPRING_CLOUD_NACOS_DISCOVERY_USERNAME: nacos
-    SPRING_CLOUD_NACOS_DISCOVERY_PASSWORD: nacos
+    SPRING_CLOUD_NACOS_DISCOVERY_USERNAME: ${NACOS_USERNAME:-nacos}
+    # ⚠️ Nacos 客户端密码必须由宿主环境注入（本机不是默认的 nacos）。
+    # 用 `:?` 强制要求：没设就直接报错，而不是静默回落到错误密码、
+    # 然后表现为一堆看不懂的 Nacos 认证失败。
+    # 用法：docker compose 之前先 $env:NACOS_PASSWORD='<密码>'
+    SPRING_CLOUD_NACOS_DISCOVERY_PASSWORD: ${NACOS_PASSWORD:?set NACOS_PASSWORD (Nacos CLIENT password) first}
     SPRING_RABBITMQ_HOST: host.docker.internal
+    # ⚠️ broker 已在容器里（docker-compose.yml），服务是**跨容器**连过去的，
+    # 源地址不是 loopback —— 而 RabbitMQ 默认禁止 guest 从非 loopback 登录，
+    # 所以必须显式给非 guest 凭据（见踩坑记录 #33 / ADR D-36）。
+    SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-hirehub}
+    SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-hirehub123}
     SPRING_DATA_REDIS_HOST: host.docker.internal
     HIREHUB_ES_HOST: host.docker.internal
     HIREHUB_MINIO_ENDPOINT: http://host.docker.internal:9010
@@ -96,6 +105,9 @@ services:
       <<: *common-env
       SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3307/hirehub_resume?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
       HIREHUB_MINIO_ENDPOINT: http://host.docker.internal:9010
+      # 预签名 URL 里要出现"客户端能解析"的地址：浏览器/宿主机解析不了 host.docker.internal。
+      # 签名包含 Host，所以只能在签发时就用对地址（见 MinioConfig 的说明）。
+      HIREHUB_MINIO_PUBLIC_ENDPOINT: http://localhost:9010
     ports: ["9004:9004"]
     healthcheck:
       test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/9004' || exit 1"]
@@ -168,6 +180,12 @@ services:
     container_name: hirehub-gateway
     environment:
       <<: *common-env
+      # 三期：网关限流规则的 Nacos 地址（GatewayFlowRuleDataSourceConfig 读的就是这个 key）。
+      # ⚠️ 容器里的 localhost 是容器自己，必须指向宿主机；漏了这条规则拉不到，
+      #    限流会静默失效（表现为"配置明明在 Nacos 里，压测却全放行"）。
+      HIREHUB_SENTINEL_NACOS_SERVER_ADDR: host.docker.internal:8848
+      HIREHUB_SENTINEL_NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
+      HIREHUB_SENTINEL_NACOS_PASSWORD: ${NACOS_PASSWORD:?set NACOS_PASSWORD (Nacos CLIENT password) first}
     ports: ["9000:9000"]
     depends_on:
       hirehub-auth:         { condition: service_healthy }

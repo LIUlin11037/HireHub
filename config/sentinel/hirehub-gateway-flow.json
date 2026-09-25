@@ -3,7 +3,7 @@
     "resource": "hirehub-auth",
     "resourceMode": 0,
     "grade": 1,
-    "count": 5,
+    "count": 100,
     "intervalSec": 1,
     "controlBehavior": 0
   }
