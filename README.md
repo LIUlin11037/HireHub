@@ -126,20 +126,5 @@ Spring Boot **3.5.0** · Spring Cloud **2025.0.0** · Spring Cloud Alibaba **202
 Gateway（WebFlux）· OpenFeign · MyBatis-Plus 3.5.17 · MySQL 8 · Redis 7 · RabbitMQ 3.13 ·
 Elasticsearch 8.14（IK）· Sentinel 1.8.9 · MinIO · springdoc 2.8.17 · Micrometer Tracing · JUnit 5 + Mockito
 
----
-
-## 文档导航
-
-| 文档 | 内容 |
-|---|---|
-| [面试问答清单](docs/面试问答.md) | **24 个高频问题的答法**（含"你怎么知道它是对的"这类深挖题）★ 建议先看这份 |
-| [架构与实施文档](docs/架构与实施文档.md) | 服务边界、数据库、核心链路、接口清单、MQ 拓扑、部署 |
-| [关键决策记录（ADR）](docs/关键决策记录.md) | 38 条决策的**背景 / 备选 / 理由 / 代价** |
-| [踩坑记录](docs/踩坑记录.md) | 43 条真实踩坑与最终解法（含 6 条"假绿/假红"类） |
-| [端到端验证](docs/端到端验证.md) | ①–⑧ 手工冒烟路径（curl） |
-| [端到端验证报告](docs/端到端验证报告.md) | 一期验收的逐条实测结果 |
-| [压测报告](docs/压测报告.md) | 真实吞吐 / 延迟数据与"这不是生产容量"的说明 |
-| [收尾计划](docs/收尾计划.md) | 当前进度与后续安排 |
-| [项目上下文](docs/project_context.md) | 新会话快速恢复上下文用 |
 
 
