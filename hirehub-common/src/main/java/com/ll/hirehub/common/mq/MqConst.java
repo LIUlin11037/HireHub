@@ -34,8 +34,6 @@ public final class MqConst {
     public static final String RK_COMPANY_UPSERT = "company.upsert";
     /** 三期：简历附件已上传 → 异步解析（见 Q-03） */
     public static final String RK_RESUME_PARSE = "resume.parse";
-    /** 三期：面试提醒死信路由键（延迟队列 TTL 到期经 DLX 投递，只有 interview 服务消费） */
-    public static final String RK_INTERVIEW_REMIND = "interview.remind";
     /** 三期：面试提醒 → 站内通知（interview 校验后转发，notification 服务消费） */
     public static final String RK_INTERVIEW_REMIND_NOTIFY = "interview.remind.notify";
     /** 三期：企业认证被撤销（定期复核发现注销）→ 该企业岗位批量下线（见 Q-08） */
@@ -51,10 +49,8 @@ public final class MqConst {
     public static final String QUEUE_COMPANY_SEARCH = "hirehub.company.search";
     /** 三期：简历解析队列（resume 服务自消费，PDFBox/POI → 结构化 + resume_index） */
     public static final String QUEUE_RESUME_PARSE = "hirehub.resume.parse";
-    /** 三期：面试提醒延迟队列（**无消费者**，消息 TTL 到期后进 DLX，见 D-32） */
-    public static final String QUEUE_INTERVIEW_REMIND_DELAY = "hirehub.interview.remind.delay";
-    /** 三期：面试提醒消费队列（interview 服务自消费，校验面试仍有效后转发通知） */
-    public static final String QUEUE_INTERVIEW_REMIND = "hirehub.interview.remind";
+    // 注：面试提醒的延迟队列已不再用 RabbitMQ（原来那两个队列 QUEUE_INTERVIEW_REMIND_DELAY /
+    // QUEUE_INTERVIEW_REMIND 已删除）—— 消息级 TTL 有队头阻塞，改用 Redis ZSet，见 D-38 / 踩坑 #43
     /** 三期：企业认证撤销 → job 批量下线该企业岗位（见 Q-08 状态联动） */
     public static final String QUEUE_JOB_COMPANY_REVOKE = "hirehub.job.company-revoke";
 
@@ -96,8 +92,7 @@ public final class MqConst {
         public static final String COMPANY_SEARCH = "company-search";
         /** 简历解析消费者 */
         public static final String RESUME_PARSE = "resume-parse";
-        /** 面试提醒消费者 */
-        public static final String INTERVIEW_REMIND = "interview-remind";
+        // 注：「面试提醒消费者」已删除：延迟触发改由 Redis ZSet + 轮询完成，不再有 MQ 消费者（D-38）
         /** 企业认证撤销消费者（job 批量下线岗位） */
         public static final String JOB_COMPANY_REVOKE = "job-company-revoke";
     }

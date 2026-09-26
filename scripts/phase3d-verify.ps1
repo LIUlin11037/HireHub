@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 <#
   HireHub phase-3d verification: the interview state machine (D-28) -- the last
   block of endpoints that no script had ever executed.
@@ -25,7 +25,7 @@
 #>
 . "$PSScriptRoot\e2e-lib.ps1"
 
-$PWD_ = '123456'
+$PWD_ = '123456ab'
 $ID_CARD_OK = '110101199003078515'
 
 # ---------- reuse the ids created by e2e-verify.ps1 ----------

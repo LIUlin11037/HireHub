@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 <#
   phase3e-verify.ps1 -- close the 10 endpoints that api-coverage.ps1 reports as
   never called by any script.
@@ -23,7 +23,7 @@
 #>
 . "$PSScriptRoot\e2e-lib.ps1"
 
-$PWD_ = '123456'
+$PWD_ = '123456ab'
 $ID_CARD_OK = '110101199003078515'
 $CITY_HZ = -join ([char]0x676D, [char]0x5DDE)
 $NOTIFY_BASE = 'http://localhost:9007'

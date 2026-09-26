@@ -15,12 +15,20 @@ spring:
       password: "${NACOS_PASSWORD:nacos}"
       discovery:
         server-addr: localhost:8848
-  # 三期：面试提醒延迟消息（见 D-32）
+  # 三期修订（D-38）：面试提醒的延迟队列改用 Redis ZSet，不再用 RabbitMQ 消息级 TTL
+  # （消息级 TTL 只在队头过期时才检查，远期提醒会堵死近期提醒 —— 见踩坑记录 #43）
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  # 三期：面试提醒经 MQ 转发站内通知（见 D-32）
   rabbitmq:
     host: localhost
     port: 5672
-    username: guest
-    password: guest
+    # broker 已在容器里，跨容器连接不能用 guest（只允许 loopback）——
+    # 见踩坑记录 #33 / ADR D-36。本地默认值可用环境变量覆盖。
+    username: ${RABBITMQ_USERNAME:hirehub}
+    password: ${RABBITMQ_PASSWORD:hirehub123}
     listener:
       simple:
         acknowledge-mode: manual   # 处理成功才 ACK，配合 interview_reminder 状态机幂等

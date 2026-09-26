@@ -42,12 +42,15 @@ services:
     restart: unless-stopped
     environment:
       MODE: standalone
-      # ⚠️ 本地开发关闭鉴权。原因见下：Nacos 的用户表存在容器内嵌存储里，
-      #    一旦换成本地默认鉴权，重建容器就会把用户清掉，导致所有服务注册 401 崩循环；
-      #    而且 Nacos 3.0 的 HTTP 登录接口在本机恒返回 500（见踩坑 #26），没法用 API 修复。
-      #    要恢复"开鉴权"：置为 "true"，重建 Nacos，然后到控制台 http://localhost:8080
-      #    设一次密码，并把同一个值写进 docker/.env 的 NACOS_PASSWORD。
-      NACOS_AUTH_ENABLE: "false"
+      # 鉴权开启（本机与 docker 用同一个密码，见 docker/.env 的 NACOS_PASSWORD）。
+      # ⚠️ Nacos 的用户表在容器内嵌存储里，**换容器/清卷就会重置**（见踩坑 #42）。
+      #    本文件已为 /home/nacos/data 挂持久卷，正常情况下不会再丢。
+      #    万一又出现「Code: 401, User not found」，处理顺序：
+      #      ① 起栈 → 浏览器进 http://localhost:8080 设一次密码；
+      #      ② 同一个值写进 docker/.env 的 NACOS_PASSWORD；
+      #      ③ 重建 8 个服务。
+      #    之所以必须人工做这一步：Nacos 3.0 的 HTTP 登录接口在本机恒返回 500（踩坑 #26），无法用 API 改。
+      NACOS_AUTH_ENABLE: "true"
       JVM_XMS: 512m
       JVM_XMX: 512m
       JVM_XMN: 256m

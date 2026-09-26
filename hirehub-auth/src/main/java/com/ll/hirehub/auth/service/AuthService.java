@@ -42,6 +42,8 @@ public class AuthService {
     private final RealNameVerifier realNameVerifier;
     private final TokenStore tokenStore;
     private final CompanyClient companyClient;
+    /** 登录失败限制（防撞库，见 LoginAttemptGuard） */
+    private final LoginAttemptGuard loginGuard;
 
     @Transactional(rollbackFor = Exception.class)
     public void register(RegisterRequest req) {
@@ -73,14 +75,28 @@ public class AuthService {
     }
 
     public LoginVO login(LoginRequest req) {
+        // 先看锁定：锁定期内**即使密码正确也拒**，否则爆破方在窗口里撞对一次就绕过了整套防护
+        long locked = loginGuard.lockedSeconds(req.getUsername());
+        if (locked > 0) {
+            throw new BusinessException(ResultCode.FORBIDDEN.getCode(),
+                    LoginAttemptGuard.describeLock(locked));
+        }
+
         SysUser user = userMapper.selectOne(
                 new LambdaQueryWrapper<SysUser>().eq(SysUser::getUsername, req.getUsername()));
         if (user == null || !passwordEncoder.matches(req.getPassword(), user.getPassword())) {
+            // 用户名不存在也计数：否则"账号是否存在"会从响应差异里泄漏出去
+            boolean justLocked = loginGuard.recordFailure(req.getUsername());
+            if (justLocked) {
+                throw new BusinessException(ResultCode.FORBIDDEN.getCode(),
+                        LoginAttemptGuard.describeLock(loginGuard.lockedSeconds(req.getUsername())));
+            }
             throw new BusinessException(ResultCode.UNAUTHORIZED.getCode(), "用户名或密码错误");
         }
         if (user.getStatus() == null || user.getStatus() != 1) {
             throw new BusinessException("账号已被禁用");
         }
+        loginGuard.clear(req.getUsername());   // 成功即清零
 
         List<String> roles = roleMapper.selectRoleCodesByUserId(user.getId());
 

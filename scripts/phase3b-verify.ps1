@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 <#
   HireHub phase-3b verification: the three things still unproven.
     A) resume parsing over a REAL file (MinIO -> PDFBox -> DB -> ES)
@@ -13,7 +13,7 @@
 #>
 . "$PSScriptRoot\e2e-lib.ps1"
 
-$PWD_ = '123456'
+$PWD_ = '123456ab'
 
 # ---------- parse the setup log produced by e2e-verify.ps1 ----------
 $setupLog = Join-Path $PSScriptRoot '..\logs\e2e-setup.log'
@@ -139,10 +139,11 @@ if ($prB.Json.data) { $errB = [string]$prB.Json.data.parseError }
 Assert-Step 'A: failure carries a human-readable reason' ($errB.Length -gt 5) ("parseError={0}" -f $errB)
 
 # =====================================================================
-# B) interview reminder: REAL TTL + DLX delayed path
+# B) interview reminder: real delayed delivery via Redis ZSet (see D-38)
+#    (was RabbitMQ message-TTL + DLX until D-38; that had head-of-line blocking)
 # =====================================================================
 Write-Host ''
-Write-Host '########## B) interview reminder TTL+DLX (future interview) ##########'
+Write-Host '########## B) interview reminder via Redis ZSet delay queue ##########'
 $future = (Get-Date).AddMinutes(31).ToString('yyyy-MM-ddTHH:mm:ss')
 $ni = Api POST '/api/interview' -Token $BobTok -Body (Json @{ deliveryId = $DeliveryId; interviewTime = $future; interviewType = 'ONLINE'; addressOrLink = 'https://meet.example.com/p3'; interviewerName = 'HR' })
 $NewIvId = [int]$ni.Json.data
@@ -153,11 +154,11 @@ $n1 = Api GET '/api/notification/list' -Token $AliceTok
 $cnt1 = @($n1.Json.data | Where-Object { $_.content -match "$NewIvId" }).Count
 Assert-Step 'B: 1-day tier fired at once (its remind time already passed)' ($cnt1 -ge 1) ("matched={0} total={1}" -f $cnt1, @($n1.Json.data).Count)
 
-Write-Host 'B: 30-min tier now sits in the delay queue with a REAL ~60s TTL; waiting 85s...'
+Write-Host 'B: 30-min tier now sits in the Redis ZSet with a REAL ~60s delay; waiting 85s...'
 Start-Sleep -Seconds 85
 $n2 = Api GET '/api/notification/list' -Token $AliceTok
 $matched = @($n2.Json.data | Where-Object { $_.content -match "$NewIvId" })
-Assert-Step 'B: after TTL expiry BOTH tiers delivered (TTL+DLX works)' ($matched.Count -ge 2) ("delivered={0} total={1}" -f $matched.Count, @($n2.Json.data).Count)
+Assert-Step 'B: after the delay elapses BOTH tiers delivered (Redis ZSet works)' ($matched.Count -ge 2) ("delivered={0} total={1}" -f $matched.Count, @($n2.Json.data).Count)
 foreach ($m in $matched) { Write-Host ("    -> " + $m.content) }
 
 # =====================================================================

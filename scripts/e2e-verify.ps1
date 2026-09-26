@@ -41,11 +41,11 @@ Write-Host ''
 Write-Host '########## Phase 0：登录 / 注册 ##########'
 
 # ---------- ① 求职者 alice ----------
-$reg = Api POST '/api/auth/register' -Body ("{{""username"":""{0}"",""password"":""123456"",""phone"":""{1}""}}" -f $Alice, $PhoneAlice)
+$reg = Api POST '/api/auth/register' -Body ("{{""username"":""{0}"",""password"":""123456ab"",""phone"":""{1}""}}" -f $Alice, $PhoneAlice)
 $regOk = ($reg.Json.code -eq 0) -or ($reg.Text -match '已存在')
 Assert-Step "① alice 注册 ($Alice)" $regOk $reg.Text
 
-$login = Api POST '/api/auth/login' -Body ("{{""username"":""{0}"",""password"":""123456""}}" -f $Alice)
+$login = Api POST '/api/auth/login' -Body ("{{""username"":""{0}"",""password"":""123456ab""}}" -f $Alice)
 $ALICE = $login.Json.data.accessToken
 Assert-Step '① alice 登录 → accessToken' ([bool]$ALICE) ("userId={0} roles={1}" -f $login.Json.data.userId, ($login.Json.data.roles -join ','))
 
@@ -79,10 +79,10 @@ $rget = Api GET ("/api/resume/{0}" -f $RESUME_ID) -Token $ALICE
 Assert-Step '① alice 简历详情' ($rget.Json.code -eq 0) ("name={0} expectCity={1}" -f $rget.Json.data.name, $rget.Json.data.expectCity)
 
 # ---------- ② HR bob ----------
-$reg = Api POST '/api/auth/register' -Body ("{{""username"":""{0}"",""password"":""123456"",""phone"":""{1}""}}" -f $Bob, $PhoneBob)
+$reg = Api POST '/api/auth/register' -Body ("{{""username"":""{0}"",""password"":""123456ab"",""phone"":""{1}""}}" -f $Bob, $PhoneBob)
 Assert-Step "② bob 注册 ($Bob)" (($reg.Json.code -eq 0) -or ($reg.Text -match '已存在')) $reg.Text
 
-$login = Api POST '/api/auth/login' -Body ("{{""username"":""{0}"",""password"":""123456""}}" -f $Bob)
+$login = Api POST '/api/auth/login' -Body ("{{""username"":""{0}"",""password"":""123456ab""}}" -f $Bob)
 $BOB = $login.Json.data.accessToken
 Assert-Step '② bob 登录 → accessToken' ([bool]$BOB) ("userId={0}" -f $login.Json.data.userId)
 

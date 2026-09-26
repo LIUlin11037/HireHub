@@ -19,8 +19,10 @@ spring:
   rabbitmq:
     host: localhost
     port: 5672
-    username: guest
-    password: guest
+    # broker 已在容器里，跨容器连接不能用 guest（只允许 loopback）——
+    # 见踩坑记录 #33 / ADR D-36。本地默认值可用环境变量覆盖。
+    username: ${RABBITMQ_USERNAME:hirehub}
+    password: ${RABBITMQ_PASSWORD:hirehub123}
     publisher-confirm-type: correlated   # 没有 confirm 就不知道消息有没有真的到 broker
     listener:
       simple:

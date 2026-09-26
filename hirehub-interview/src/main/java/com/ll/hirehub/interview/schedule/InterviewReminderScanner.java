@@ -13,18 +13,21 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 面试提醒兜底扫描（见 D-32）。
+ * 面试提醒兜底扫描（见 D-32 / D-38）。
  * <p>
- * <b>为什么必须有它</b>——延迟消息方案有两个绕不开的窟窿：
+ * <b>主路径</b>是 {@code RedisDelayQueue} + {@code InterviewReminderPoller}（秒级到点即发）。
+ * 本扫描器是**兜底**，覆盖主路径覆盖不到的情况：
  * <ol>
- *   <li><b>队头阻塞</b>：TTL 是消息级参数，RabbitMQ 只在队头消息到期时才检查它。
- *       一条"1 天后提醒"排在队头，后面那条"30 分钟后提醒"就得干等一天才死信。
- *       不装延迟插件（见 D-32 的取舍）就必须接受这个缺陷。</li>
- *   <li><b>消息可能丢</b>：broker 重启、投递失败、DLX 配置变更都会让某些延迟消息消失。</li>
+ *   <li><b>延迟项丢了</b>：轮询器已用 {@code ZREM} 认领、但还没发出通知就崩了；
+ *       或者排布时写 Redis 失败（那时只记了一条 error 日志）。</li>
+ *   <li><b>服务停机期间到点</b>：实例重启那几分钟内到点的提醒没人触发。</li>
+ *   <li><b>任何未来的实现漏洞</b>：判据是"该提醒了却还是待发"，与"延迟怎么实现的"无关。</li>
  * </ol>
- * 扫描的判据很朴素但有效：<b>凡是"该提醒了却还是待发"的记录，补发</b>。
- * 它按 {@code remind_time} 找活，与延迟消息共用 {@link InterviewReminderService#fire} 的乐观占位，
+ * 它按 {@code remind_time} 找活，与主路径共用 {@link InterviewReminderService#fire} 的乐观占位，
  * 所以两条路径同时命中也不会重复发。
+ * <p>
+ * （历史上这里兜的是「RabbitMQ 消息级 TTL 的队头阻塞」，那个缺陷已在 D-38 里根治，
+ * 但**兜底本身要保留** —— 理由与上面第 1、2 条无关，而是"主路径永远可能失败"。）
  */
 @Slf4j
 @Component

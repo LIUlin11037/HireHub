@@ -2,10 +2,6 @@ package com.ll.hirehub.interview.mq;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ll.hirehub.common.mq.MqConst;
-import org.springframework.amqp.core.Binding;
-import org.springframework.amqp.core.BindingBuilder;
-import org.springframework.amqp.core.Queue;
-import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
@@ -13,22 +9,21 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * interview 侧 MQ 拓扑：面试提醒延迟消息（TTL + DLX，见 D-32）。
+ * interview 侧的 MQ 拓扑（见 D-32 修订 / D-38）。
  * <pre>
- *   hirehub.interview.remind.delay   ← 生产者投递，带 per-message TTL，**没有消费者**
- *              │ TTL 到期
- *              ↓ DLX = hirehub.topic / routing = interview.remind
- *   hirehub.interview.remind         ← interview 服务消费，校验后转发站内通知
- *              │ routing = interview.remind.notify
+ *   Redis ZSet 延迟队列（到点由 InterviewReminderPoller 取出，见 D-38）
+ *              │ 校验后转发 routing = interview.remind.notify
  *              ↓
- *   hirehub.notification.msg         ← notification 服务消费，落库分发
+ *   hirehub.notification.msg   ← notification 服务消费，落库 + 推送
  * </pre>
- * <b>为什么用 TTL + DLX 而不是延迟插件</b>：延迟插件要额外安装（运维成本），
- * 而本项目的两个提前量（1 天 / 30 分钟）用 TTL 完全够；代价是队头阻塞，
- * 由 {@code InterviewReminderScanner} 兜底扫描补偿——这个取舍见踩坑记录与 D-32。
+ * <b>为什么延迟不再走 RabbitMQ</b>：消息级 TTL **只在消息到达队头时才被检查** ——
+ * 一条"1 天后提醒"排在队头，后面那条"30 分钟后提醒"就得干等一天才死信。
+ * 这个队头阻塞实测踩到过（踩坑记录 #43），改期/取消也会留下失效消息。
+ * 改用 **Redis ZSet**（按到点时间做 score）后谁到点谁先出，且 Redis 本就在运维清单里，
+ * 不引入新组件（见 D-38）。
  * <p>
- * <b>为什么延迟队列声明在 producer 侧</b>：消费方不在这个服务，
- * 队列参数（DLX 指向）属于"投递约定"，必须跟生产逻辑放在一起才不会漂移。
+ * 这里只保留**发送通知**所需的最小拓扑：interview 是 producer，
+ * 通知队列与绑定由 notification 服务自己声明（谁消费谁声明，避免两边参数漂移）。
  */
 @Configuration
 public class InterviewMqConfig {
@@ -36,26 +31,6 @@ public class InterviewMqConfig {
     @Bean
     public TopicExchange hirehubExchange() {
         return new TopicExchange(MqConst.EXCHANGE, true, false);
-    }
-
-    /** 延迟队列：无消费者，靠消息级 TTL 到期后死信 */
-    @Bean
-    public Queue interviewRemindDelayQueue() {
-        return QueueBuilder.durable(MqConst.QUEUE_INTERVIEW_REMIND_DELAY)
-                .withArgument("x-dead-letter-exchange", MqConst.EXCHANGE)
-                .withArgument("x-dead-letter-routing-key", MqConst.RK_INTERVIEW_REMIND)
-                .build();
-    }
-
-    @Bean
-    public Queue interviewRemindQueue() {
-        return QueueBuilder.durable(MqConst.QUEUE_INTERVIEW_REMIND).build();
-    }
-
-    @Bean
-    public Binding interviewRemindBinding(Queue interviewRemindQueue, TopicExchange hirehubExchange) {
-        return BindingBuilder.bind(interviewRemindQueue).to(hirehubExchange)
-                .with(MqConst.RK_INTERVIEW_REMIND);
     }
 
     @Bean

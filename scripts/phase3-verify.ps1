@@ -12,7 +12,7 @@
 #>
 . "$PSScriptRoot\e2e-lib.ps1"
 
-$PWD_ = '123456'
+$PWD_ = '123456ab'
 $ID_CARD_OK = '110101199003078515'
 $ADMIN_U = 'admin'
 $ADMIN_P = 'admin123'

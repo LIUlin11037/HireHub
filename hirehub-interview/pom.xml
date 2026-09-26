@@ -39,10 +39,17 @@
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-jsqlparser</artifactId>
         </dependency>
-        <!-- 三期：面试提醒延迟消息（TTL + DLX → 站内通知，见 D-32） -->
+        <!-- 三期：面试提醒延迟消息（见 D-32） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+        <!-- 三期修订（D-38）：延迟队列从「RabbitMQ 消息级 TTL」改为「Redis ZSet」——
+             消息级 TTL 只在队头过期时才会被检查，远期提醒会把近期提醒全堵死（踩坑 #43）。
+             Redis 本来就在运维清单里，不引入新组件。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
         <dependency>
             <groupId>com.mysql</groupId>

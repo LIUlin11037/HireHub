@@ -56,22 +56,26 @@ spring:
       eager: true                       # 启动即初始化，避免懒加载导致规则不生效
       transport:
         dashboard: localhost:8858       # 控制台（可选，不启动不影响规则）
-      datasource:
-        flow:
-          nacos:
-            server-addr: localhost:8848
-            username: nacos
-            password: "${NACOS_PASSWORD:nacos}"
-            data-id: hirehub-gateway-flow
-            group-id: DEFAULT_GROUP
-            # 网关用 GatewayFlowRule（gw-flow）；写成 flow 规则进的是普通 FlowRule，对路由不生效
-            rule-type: gw-flow
+      # ⚠️ 这里**故意不再配 datasource**（踩坑记录 #20 及续集）：
+      # SCA 对 rule-type: gw-flow 会把规则注册到错误的规则管理器 —— 实测表现为
+      # 被拦时抛 ParamFlowException（热点参数限流），由 SentinelWebFluxFilter 拦下、
+      # 最终被兜成 HTTP 500，而不是走 SentinelGatewayFilter 的 429 处理器。
+      # 规则改由 GatewayFlowRuleDataSourceConfig 用 Sentinel 原生 API 直接接入
+      # GatewayRuleManager，Nacos 坐标见下面 hirehub.sentinel.nacos。
 
 # JWT secret 必须与 auth 服务一致（同一环境变量 + 同一默认值）
 hirehub:
   jwt:
     secret: ${HIREHUB_JWT_SECRET:hirehub-dev-secret-please-override-0123456789}
     access-expire-seconds: 1800
+  # 三期：网关限流规则的 Nacos 坐标（由 GatewayFlowRuleDataSourceConfig 读取）
+  sentinel:
+    nacos:
+      server-addr: localhost:8848
+      username: nacos
+      password: "${NACOS_PASSWORD:nacos}"
+      group-id: DEFAULT_GROUP
+      data-id: hirehub-gateway-flow
 
 management:
   tracing:
@@ -84,3 +88,6 @@ logging:
     name: logs/${spring.application.name}.log
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}] %-15.15t %-40.40logger{39} : %m%n%wEx"
+    # ⚠️ 必须单独配 file：只配 console 时，文件 appender 用的是 Boot 默认 pattern，
+    # 里面没有 traceId —— 之前据此判断"traceId 没生效"是错误的（见踩坑记录 #21）。
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}] %-15.15t %-40.40logger{39} : %m%n%wEx"

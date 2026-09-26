@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -60,6 +61,7 @@ public class InterviewReminderService {
     private final InterviewMapper interviewMapper;
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
+    private final RedisDelayQueue delayQueue;
 
     // ------------------------------------------------------------ 排布
 
@@ -98,11 +100,11 @@ public class InterviewReminderService {
 
             long delayMs = Duration.between(now, remindAt).toMillis();
             if (delayMs <= 0) {
-                // 提前量已过（例如临时约 2 小时后的面试）：立即提醒，别排一条永远等不到的延迟消息
+                // 提前量已过（例如临时约 2 小时后的面试）：立即提醒，别排一条永远等不到的延迟项
                 log.info("提醒时间已到点，立即发送: interviewId={} tier={}", interview.getId(), tier);
                 fire(reminder, interview);
             } else {
-                publishDelayMessage(reminder, delayMs);
+                offerDelayMessage(reminder, remindAt);
             }
         }
     }
@@ -111,6 +113,11 @@ public class InterviewReminderService {
     public void cancel(Long interviewId) {
         if (interviewId == null) {
             return;
+        }
+        // 先把延迟项从 Redis 摘掉：否则到点时还会被轮询捞出来白跑一趟
+        // （DB 里的状态校验仍保留 —— 那是最后一道闸，不能只靠"记得清队列"）
+        for (String tier : TIERS.keySet()) {
+            delayQueue.cancel(interviewId, tier);
         }
         int rows = reminderMapper.update(null, new LambdaUpdateWrapper<InterviewReminder>()
                 .eq(InterviewReminder::getInterviewId, interviewId)
@@ -125,12 +132,10 @@ public class InterviewReminderService {
     // ------------------------------------------------------------ 触发
 
     /**
-     * 延迟消息到期（DLX 投递）后的处理入口。
+     * 延迟项到点后的处理入口（由 {@code InterviewReminderPoller} 从 Redis ZSet 取出后调用）。
      * 校验顺序：取出提醒行 → 令牌/状态 → 面试是否仍然有效。
      */
-    public void onDelayMessage(MqMessage message) throws Exception {
-        MqPayload.InterviewRemind payload =
-                objectMapper.readValue(message.getPayload(), MqPayload.InterviewRemind.class);
+    public void onReminderDue(MqPayload.InterviewRemind payload) {
         InterviewReminder reminder = find(payload.getInterviewId(), payload.getTier());
         if (reminder == null) {
             log.info("提醒记录不存在（面试已删除），忽略: interviewId={} tier={}",
@@ -259,29 +264,27 @@ public class InterviewReminderService {
         return existing;
     }
 
-    /** 投递延迟消息：走默认 exchange，routing key = 队列名，per-message TTL 决定延迟时长 */
-    private void publishDelayMessage(InterviewReminder reminder, long delayMs) {
+    /**
+     * 把一个延迟项放进 Redis ZSet（见 D-38）。
+     * <p>
+     * score = 提醒应该触发的时刻。之所以不用 RabbitMQ 消息级 TTL：
+     * 那种 TTL 只在队头过期时才被检查，远期提醒会把近期提醒全堵死（踩坑 #43）。
+     */
+    private void offerDelayMessage(InterviewReminder reminder, LocalDateTime remindAt) {
         try {
             MqPayload.InterviewRemind payload = new MqPayload.InterviewRemind();
             payload.setInterviewId(reminder.getInterviewId());
             payload.setTier(reminder.getTier());
             payload.setToken(reminder.getToken());
 
-            MqMessage message = new MqMessage();
-            message.setMessageId(UUID.randomUUID().toString().replace("-", ""));
-            message.setBizType(MqConst.BizType.INTERVIEW_REMIND);
-            message.setBizId(reminder.getInterviewId());
-            message.setPayload(objectMapper.writeValueAsString(payload));
-
-            rabbitTemplate.convertAndSend("", MqConst.QUEUE_INTERVIEW_REMIND_DELAY, message, msg -> {
-                msg.getMessageProperties().setExpiration(String.valueOf(delayMs));
-                return msg;
-            });
-            log.info("已排布面试提醒延迟消息: interviewId={} tier={} delayMs={}",
-                    reminder.getInterviewId(), reminder.getTier(), delayMs);
+            long atMillis = remindAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+            delayQueue.offer(reminder.getInterviewId(), reminder.getTier(), atMillis,
+                    objectMapper.writeValueAsString(payload));
+            log.info("已排布面试提醒延迟项(Redis ZSet): interviewId={} tier={} at={}",
+                    reminder.getInterviewId(), reminder.getTier(), remindAt);
         } catch (Exception e) {
-            // 投递失败不影响面试创建：兜底扫描会按 remind_time 补发
-            log.error("排布面试提醒延迟消息失败（兜底扫描会补发）: interviewId={} tier={} err={}",
+            // 排布失败不影响面试创建：兜底扫描会按 remind_time 补发
+            log.error("排布延迟项失败（兜底扫描会补发）: interviewId={} tier={} err={}",
                     reminder.getInterviewId(), reminder.getTier(), e.getMessage());
         }
     }

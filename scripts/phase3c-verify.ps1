@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 <#
   HireHub phase-3 / M5.3 verification: Q-08 company verification periodic recheck
   + job takedown linkage (MQ main path) + fallback reconcile.
@@ -24,7 +24,7 @@
 #>
 . "$PSScriptRoot\e2e-lib.ps1"
 
-$PWD_ = '123456'
+$PWD_ = '123456ab'
 $ID_CARD_OK = '110101199003078515'
 $ADMIN_U = 'admin'
 $ADMIN_P = 'admin123'
