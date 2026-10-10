@@ -1,6 +1,7 @@
 package com.ll.hirehub.api;
 
 import com.ll.hirehub.api.dto.CompanyMemberDTO;
+import com.ll.hirehub.api.dto.IdNameDTO;
 import com.ll.hirehub.common.result.Result;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,4 +32,8 @@ public interface CompanyClient {
     /** 查企业认证状态（0 待审核 / 1 通过 / 2 驳回 / 3 已撤销） */
     @GetMapping("/internal/{id}/verify-status")
     Result<Integer> getVerifyStatus(@PathVariable("id") Long id);
+
+    /** 批量查企业名称（投递列表冗余 companyName 用，见 D-41） */
+    @GetMapping("/internal/names")
+    Result<List<IdNameDTO>> listNames(@RequestParam("ids") List<Long> ids);
 }

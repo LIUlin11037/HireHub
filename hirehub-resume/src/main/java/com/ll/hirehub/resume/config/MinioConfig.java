@@ -14,9 +14,10 @@ import org.springframework.context.annotation.Configuration;
  * <b>为什么需要两个客户端</b>：预签名 URL 里的主机名会参与签名，
  * 而"服务怎么连 MinIO"和"客户端怎么连 MinIO"<b>未必是同一个地址</b>：
  * <ul>
- *   <li>容器里服务访问 MinIO 是 {@code host.docker.internal:9010}；</li>
- *   <li>但拿到预签名 URL 的是<b>浏览器/宿主机</b>，它解析不了
- *       {@code host.docker.internal} —— 实测报
+ *   <li>容器里服务访问 MinIO 走的是<b>容器名</b> {@code hirehub-minio:9000}；</li>
+ *   <li>但拿到预签名 URL 的是<b>浏览器/宿主机</b>，它解析不了容器名，
+ *       只能用 {@code localhost:9010}（宿主映射端口）——
+ *       实测让浏览器去解析 {@code host.docker.internal} 会报
  *       {@code The remote name could not be resolved: 'host.docker.internal'}。</li>
  * </ul>
  * 签名包含 Host，所以<b>签发后换主机名会让签名失效</b>，只能在签发时就用对地址。

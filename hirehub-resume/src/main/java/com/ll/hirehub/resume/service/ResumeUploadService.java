@@ -48,7 +48,8 @@ public class ResumeUploadService implements ApplicationRunner {
 
     /**
      * 预签名专用客户端：走"对客户端可达"的地址。
-     * 容器化时服务走 host.docker.internal、浏览器走 localhost，两者不能混用（见 MinioConfig）。
+     * 容器化时服务走**容器名**（{@code hirehub-minio:9000}）、浏览器走宿主机 {@code localhost:9010}，
+     * 两者不能混用（见 MinioConfig）。
      */
     private final MinioConfig.PresignClient minioPresignClient;
 

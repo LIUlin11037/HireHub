@@ -72,6 +72,22 @@ public class InterviewService {
                 .orderByDesc(Interview::getCreateTime));
     }
 
+    /**
+     * HR 视角：本企业发出的全部面试（见 D-41）。
+     * <p>
+     * 与 {@link #mine} 正好相对：那个按 {@code seekerId} 查（求职者看"我的面试"），
+     * 这个按 {@code companyId} 查（HR 看"我发出的面试"）。此前只有前者，
+     * 于是 HR 侧根本列不出面试，前端只能靠 localStorage 记 id —— 换个设备就全丢。
+     * <p>
+     * 权限复用 {@link #requireHr}：非该企业在职 OWNER/HR → 403。
+     */
+    public List<Interview> company(Long companyId, Long userId) {
+        requireHr(userId, companyId);
+        return interviewMapper.selectList(new LambdaQueryWrapper<Interview>()
+                .eq(Interview::getCompanyId, companyId)
+                .orderByDesc(Interview::getCreateTime));
+    }
+
     public Interview get(Long userId, Long interviewId) {
         Interview iv = requireInterview(interviewId);
         determineActor(userId, iv);

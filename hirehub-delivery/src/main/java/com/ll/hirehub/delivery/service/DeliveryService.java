@@ -8,6 +8,7 @@ import com.ll.hirehub.api.CompanyClient;
 import com.ll.hirehub.api.JobClient;
 import com.ll.hirehub.api.ResumeClient;
 import com.ll.hirehub.api.dto.CompanyMemberDTO;
+import com.ll.hirehub.api.dto.IdNameDTO;
 import com.ll.hirehub.api.dto.JobDTO;
 import com.ll.hirehub.api.dto.ResumeDTO;
 import com.ll.hirehub.common.exception.BusinessException;
@@ -23,6 +24,7 @@ import com.ll.hirehub.delivery.mapper.DeliveryMapper;
 import com.ll.hirehub.delivery.mapper.DeliveryResumeMapper;
 import com.ll.hirehub.delivery.mq.LocalMessageRecorder;
 import com.ll.hirehub.delivery.statemachine.DeliveryStateMachine;
+import com.ll.hirehub.delivery.vo.DeliveryVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -32,7 +34,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
 
 /**
  * 投递服务（见 D-26 / D-27 / D-28）。
@@ -183,20 +189,83 @@ public class DeliveryService {
                 MqConst.RK_DELIVERY_EVENT, payload);
     }
 
-    public List<Delivery> mine(Long seekerId) {
-        return deliveryMapper.selectList(new LambdaQueryWrapper<Delivery>()
+    public List<DeliveryVO> mine(Long seekerId) {
+        List<Delivery> list = deliveryMapper.selectList(new LambdaQueryWrapper<Delivery>()
                 .eq(Delivery::getSeekerId, seekerId)
                 .orderByDesc(Delivery::getCreateTime));
+        return toVoList(list);
     }
 
-    public List<Delivery> received(Long companyId, Long userId) {
+    public List<DeliveryVO> received(Long companyId, Long userId) {
         CompanyMemberDTO member = companyClient.getMember(companyId, userId).getData();
         if (member == null || member.getStatus() == null || member.getStatus() != 1) {
             throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "非该企业在职成员");
         }
-        return deliveryMapper.selectList(new LambdaQueryWrapper<Delivery>()
+        List<Delivery> list = deliveryMapper.selectList(new LambdaQueryWrapper<Delivery>()
                 .eq(Delivery::getCompanyId, companyId)
                 .orderByDesc(Delivery::getCreateTime));
+        return toVoList(list);
+    }
+
+    /** 详情同样带上展示名 —— 否则详情页也只能显示"职位ID 1" */
+    public DeliveryVO getVo(Long userId, Long deliveryId) {
+        return toVoList(List.of(get(userId, deliveryId))).get(0);
+    }
+
+    /**
+     * 组装带展示名的投递视图（见 D-41）。
+     * <p>
+     * <b>为什么不是 N+1</b>：先把整页的 jobId / companyId / resumeId 各自<b>去重</b>，
+     * 再对三个服务各发<b>一次</b>批量查询 —— 一页 N 条固定 <b>3 次</b>远程调用，与 N 无关。
+     * 逐条查的话，一页 10 条就是 30 次。
+     * <p>
+     * 远端降级（Feign fallback 返回空集合）时，这里退化成"只有 ID、没有名字"，
+     * 列表依然能正常渲染，不会因为查不到名字就把整个列表变成 500。
+     */
+    private List<DeliveryVO> toVoList(List<Delivery> list) {
+        if (list == null || list.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, String> jobTitles = toMap(
+                jobClient.listTitles(distinct(list, Delivery::getJobId)).getData());
+        Map<Long, String> companyNames = toMap(
+                companyClient.listNames(distinct(list, Delivery::getCompanyId)).getData());
+        // 注意：seekerName 是按 resumeId 批量查出来的（取简历里求职者自己填的展示名）
+        Map<Long, String> resumeNames = toMap(
+                resumeClient.listNames(distinct(list, Delivery::getResumeId)).getData());
+
+        return list.stream().map(d -> {
+            DeliveryVO vo = new DeliveryVO();
+            vo.setId(d.getId());
+            vo.setJobId(d.getJobId());
+            vo.setJobTitle(jobTitles.get(d.getJobId()));
+            vo.setResumeId(d.getResumeId());
+            vo.setSeekerId(d.getSeekerId());
+            vo.setSeekerName(resumeNames.get(d.getResumeId()));
+            vo.setCompanyId(d.getCompanyId());
+            vo.setCompanyName(companyNames.get(d.getCompanyId()));
+            vo.setStatus(d.getStatus());
+            vo.setCreateTime(d.getCreateTime());
+            vo.setUpdateTime(d.getUpdateTime());
+            return vo;
+        }).toList();
+    }
+
+    private static List<Long> distinct(List<Delivery> list, Function<Delivery, Long> getter) {
+        return list.stream().map(getter).filter(Objects::nonNull).distinct().toList();
+    }
+
+    private static Map<Long, String> toMap(List<IdNameDTO> list) {
+        if (list == null || list.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, String> map = new HashMap<>();
+        for (IdNameDTO dto : list) {
+            if (dto != null && dto.getId() != null) {
+                map.put(dto.getId(), dto.getName());
+            }
+        }
+        return map;
     }
 
     /**

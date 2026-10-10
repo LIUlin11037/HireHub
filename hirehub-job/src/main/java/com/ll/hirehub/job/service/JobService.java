@@ -1,5 +1,7 @@
 package com.ll.hirehub.job.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ll.hirehub.api.AuthClient;
 import com.ll.hirehub.api.CompanyClient;
 import com.ll.hirehub.api.dto.CompanyMemberDTO;
@@ -11,6 +13,7 @@ import com.ll.hirehub.job.cache.JobCacheService;
 import com.ll.hirehub.job.entity.Job;
 import com.ll.hirehub.job.mapper.JobMapper;
 import com.ll.hirehub.job.search.JobSyncEvent;
+import com.ll.hirehub.job.vo.JobPageVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -127,8 +130,31 @@ public class JobService {
         throw new BusinessException(ResultCode.NOT_FOUND);
     }
 
-    private CompanyMemberDTO requireMembership(Long companyId, Long userId) {
-        CompanyMemberDTO member = companyClient.getMember(companyId, userId).getData();
+    /**
+     * HR 视角：本企业的职位列表（**含草稿与已下线**，见 D-41）。
+     * <p>
+     * <b>为什么不复用 /search</b>：{@code job_index} 只索引 {@code status=1} 的职位，
+     * 草稿与已下线的职位根本不在索引里；/search 也不支持按企业过滤。
+     * 这个接口要的是"我发布过的全部职位"，而不是"能被别人搜到的职位"，所以直接走 MySQL。
+     * <p>
+     * 归属校验复用 {@link #requireMembership}：非该企业在职 OWNER/HR 一律 403。
+     */
+    public JobPageVO mine(Long companyId, Long userId, Integer status, int page, int size) {
+        requireMembership(companyId, userId);
+        long current = Math.max(page, 1);
+        long limit = Math.min(Math.max(size, 1), 100);   // 封顶，避免一次把全表拉出来
+        Page<Job> result = jobMapper.selectPage(new Page<>(current, limit),
+                new LambdaQueryWrapper<Job>()
+                        .eq(Job::getCompanyId, companyId)
+                        .eq(status != null, Job::getStatus, status)
+                        .orderByDesc(Job::getUpdateTime));
+        JobPageVO vo = new JobPageVO();
+        vo.setTotal(result.getTotal());
+        vo.setJobs(result.getRecords());
+        return vo;
+    }
+
+    private CompanyMemberDTO requireMembership(Long companyId, Long userId) {        CompanyMemberDTO member = companyClient.getMember(companyId, userId).getData();
         if (member == null || member.getStatus() == null || member.getStatus() != 1) {
             throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "非该企业在职成员");
         }

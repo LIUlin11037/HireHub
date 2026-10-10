@@ -25,6 +25,10 @@ if ($Fresh) {
     $suffix = Get-Random -Minimum 1000 -Maximum 9999
     $Alice = "$Alice$suffix"
     $Bob = "$Bob$suffix"
+    # ⚠️ 企业名也要唯一（见踩坑 #49）：默认名是固定值 '某某科技'，
+    # 跑得越多库里同名企业越多，而 phase3e 的"企业可被搜到"断言是用**名字里的数字**
+    # 当唯一关键字的 —— 名字没数字时它退化成整名，第一页装不下就**假红**。
+    $CompanyName = "$CompanyName-$suffix"
     $ALPHABET = '0123456789ABCDEFGHJKLMNPQRTUWXY'
     $W = @(1, 3, 9, 27, 19, 26, 16, 17, 20, 29, 25, 13, 8, 24, 10, 30, 28)
     $base17 = '91330100' + (Get-Random -Minimum 100000000 -Maximum 999999999).ToString()

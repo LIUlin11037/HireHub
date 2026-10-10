@@ -41,6 +41,18 @@ public class InterviewController {
         return Result.ok(interviewService.mine(userId));
     }
 
+    /**
+     * HR 视角：本企业发出的全部面试（见 D-41）。
+     * <p>
+     * 与 {@code /mine} 相对：那个是求职者看自己的面试，这个是 HR 看自己发出去的。
+     * 企业身份走 {@code X-Company-Id}，服务端再校验在职成员关系（非成员 → 403）。
+     */
+    @GetMapping("/company")
+    public Result<List<Interview>> company(@RequestHeader("X-User-Id") Long userId,
+                                          @RequestHeader("X-Company-Id") Long companyId) {
+        return Result.ok(interviewService.company(companyId, userId));
+    }
+
     @GetMapping("/{id}")
     public Result<Interview> get(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
         return Result.ok(interviewService.get(userId, id));

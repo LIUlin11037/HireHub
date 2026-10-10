@@ -1,10 +1,20 @@
 # HireHub 二期：8 个服务全部容器化
 #
 # 依赖的中间件（MySQL/Redis/Nacos/ES/MinIO/RabbitMQ）由 docker-compose.yml 起；
-# 容器统一通过 host.docker.internal 访问宿主机上已发布的中间件端口。
+# 两个 compose 同属一个项目、共享 docker_default 网络，所以服务应当**直接用容器名**访问中间件。
+#
+# ⚠️ 历史教训（见踩坑 #47）：这里原本统一用 host.docker.internal。
+# 但它在容器 /etc/hosts 里是**双栈**的（192.168.65.254 + fdc4:...::254），
+# JVM 可能选中那条**没有路由**的 IPv6，报 `SocketException: Network is unreachable` ——
+# 而 bash 的 /dev/tcp 测试却可能"能通"，极难判断。
+# **现已全部切到容器名**（MySQL / Redis / Nacos / ES / MinIO / RabbitMQ），
+# 它们同属 docker_default 网络、只解析出 IPv4，且不走 NAT 回环。
+# 注意容器内端口与宿主映射端口不同：MySQL 3306↔3307、MinIO 9000↔9010。
 #
 # 用法：
-#   1) 先确保 fat jar 已构建：mvn -DskipTests package
+#   1) 先确保 fat jar 已构建：mvn clean package -DskipTests
+#      ⚠️ **必须带 clean**：删除过源文件时若不 clean，旧 .class 会留在 jar 里继续运行，
+#         表现为"源码已经删掉的功能还在跑"，甚至让容器启动崩溃（见踩坑 #48）
 #   2) docker compose -f docker/docker-compose-services.yml up -d --build
 #   3) 网关入口仍是 http://localhost:9000（端口从容器映射到宿主）
 #
@@ -13,28 +23,36 @@
 x-service-common: &service-common
   restart: unless-stopped
   extra_hosts:
-    # 让容器能通过 host.docker.internal 访问宿主机的 MySQL / Redis / Nacos / RabbitMQ / ES / MinIO
+    # 业务已**不再依赖**它（中间件全走容器名，见踩坑 #47）。
+    # 保留仅为临时排障用（例如进容器手动 curl 宿主端口）。
     - "host.docker.internal:host-gateway"
   mem_limit: 640m
   environment: &common-env
     TZ: Asia/Shanghai
-    # 中间件都在宿主机上
-    SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: host.docker.internal:8848
+    # ⚠️ 中间件一律走**容器名**，不用 host.docker.internal（踩坑 #47）：
+    # host.docker.internal 在容器 /etc/hosts 里是**双栈**（192.168.65.254 + fdc4:...::254），
+    # JVM 可能选中那条**没有路由**的 IPv6，报 `SocketException: Network is unreachable`；
+    # 而 bash 的 /dev/tcp 测试却"能通"（它选的是另一条），从表象极难判断。
+    # 两个 compose 同属一个项目、共享 docker_default 网络，所以直接用容器名即可 ——
+    # 只解析出 IPv4（172.18.0.x），没有双栈歧义，而且不走 NAT 回环、更快。
+    # 注意：**容器内端口**与宿主映射端口不同（MySQL 3306↔3307、MinIO 9000↔9010）。
+    SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: hirehub-nacos:8848
     SPRING_CLOUD_NACOS_DISCOVERY_USERNAME: ${NACOS_USERNAME:-nacos}
     # ⚠️ Nacos 客户端密码必须由宿主环境注入（本机不是默认的 nacos）。
     # 用 `:?` 强制要求：没设就直接报错，而不是静默回落到错误密码、
     # 然后表现为一堆看不懂的 Nacos 认证失败。
     # 用法：docker compose 之前先 $env:NACOS_PASSWORD='<密码>'
     SPRING_CLOUD_NACOS_DISCOVERY_PASSWORD: ${NACOS_PASSWORD:?set NACOS_PASSWORD (Nacos CLIENT password) first}
-    SPRING_RABBITMQ_HOST: host.docker.internal
+    SPRING_RABBITMQ_HOST: hirehub-rabbitmq
     # ⚠️ broker 已在容器里（docker-compose.yml），服务是**跨容器**连过去的，
     # 源地址不是 loopback —— 而 RabbitMQ 默认禁止 guest 从非 loopback 登录，
     # 所以必须显式给非 guest 凭据（见踩坑记录 #33 / ADR D-36）。
     SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-hirehub}
     SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-hirehub123}
-    SPRING_DATA_REDIS_HOST: host.docker.internal
-    HIREHUB_ES_HOST: host.docker.internal
-    HIREHUB_MINIO_ENDPOINT: http://host.docker.internal:9010
+    SPRING_DATA_REDIS_HOST: hirehub-redis
+    HIREHUB_ES_HOST: hirehub-es
+    # MinIO 的**内部**地址（服务端建桶 / 下载用）
+    HIREHUB_MINIO_ENDPOINT: http://hirehub-minio:9000
 
 services:
 
@@ -47,7 +65,7 @@ services:
     container_name: hirehub-auth
     environment:
       <<: *common-env
-      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3307/hirehub_auth?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+      SPRING_DATASOURCE_URL: jdbc:mysql://hirehub-mysql:3306/hirehub_auth?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
     ports: ["9001:9001"]
     healthcheck:
       test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/9001' || exit 1"]
@@ -65,7 +83,7 @@ services:
     container_name: hirehub-company
     environment:
       <<: *common-env
-      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3307/hirehub_company?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+      SPRING_DATASOURCE_URL: jdbc:mysql://hirehub-mysql:3306/hirehub_company?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
     ports: ["9002:9002"]
     healthcheck:
       test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/9002' || exit 1"]
@@ -83,7 +101,7 @@ services:
     container_name: hirehub-job
     environment:
       <<: *common-env
-      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3307/hirehub_job?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+      SPRING_DATASOURCE_URL: jdbc:mysql://hirehub-mysql:3306/hirehub_job?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
       # D-29：自然语言搜索用 LLM 时从这里注入，绝不写进镜像/代码
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
     ports: ["9003:9003"]
@@ -103,10 +121,11 @@ services:
     container_name: hirehub-resume
     environment:
       <<: *common-env
-      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3307/hirehub_resume?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
-      HIREHUB_MINIO_ENDPOINT: http://host.docker.internal:9010
-      # 预签名 URL 里要出现"客户端能解析"的地址：浏览器/宿主机解析不了 host.docker.internal。
-      # 签名包含 Host，所以只能在签发时就用对地址（见 MinioConfig 的说明）。
+      SPRING_DATASOURCE_URL: jdbc:mysql://hirehub-mysql:3306/hirehub_resume?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+      HIREHUB_MINIO_ENDPOINT: http://hirehub-minio:9000
+      # 预签名 URL 里要出现"客户端能解析"的地址：**浏览器/宿主机解析不了容器名，也解析不了 host.docker.internal**。
+      # 签名包含 Host，所以只能在签发时就用对地址（见 MinioConfig 的说明）——
+      # 因此 internal 走容器名、public 走宿主机的 localhost:9010，两者刻意不同。
       HIREHUB_MINIO_PUBLIC_ENDPOINT: http://localhost:9010
     ports: ["9004:9004"]
     healthcheck:
@@ -125,7 +144,7 @@ services:
     container_name: hirehub-delivery
     environment:
       <<: *common-env
-      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3307/hirehub_delivery?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+      SPRING_DATASOURCE_URL: jdbc:mysql://hirehub-mysql:3306/hirehub_delivery?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
     ports: ["9005:9005"]
     healthcheck:
       test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/9005' || exit 1"]
@@ -143,7 +162,7 @@ services:
     container_name: hirehub-interview
     environment:
       <<: *common-env
-      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3307/hirehub_interview?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+      SPRING_DATASOURCE_URL: jdbc:mysql://hirehub-mysql:3306/hirehub_interview?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
     ports: ["9006:9006"]
     healthcheck:
       test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/9006' || exit 1"]
@@ -161,7 +180,7 @@ services:
     container_name: hirehub-notification
     environment:
       <<: *common-env
-      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3307/hirehub_notification?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+      SPRING_DATASOURCE_URL: jdbc:mysql://hirehub-mysql:3306/hirehub_notification?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
     ports: ["9007:9007"]
     healthcheck:
       test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/9007' || exit 1"]
@@ -181,9 +200,9 @@ services:
     environment:
       <<: *common-env
       # 三期：网关限流规则的 Nacos 地址（GatewayFlowRuleDataSourceConfig 读的就是这个 key）。
-      # ⚠️ 容器里的 localhost 是容器自己，必须指向宿主机；漏了这条规则拉不到，
+      # ⚠️ 走**容器名**（不再是宿主机地址）；漏了这条规则拉不到，
       #    限流会静默失效（表现为"配置明明在 Nacos 里，压测却全放行"）。
-      HIREHUB_SENTINEL_NACOS_SERVER_ADDR: host.docker.internal:8848
+      HIREHUB_SENTINEL_NACOS_SERVER_ADDR: hirehub-nacos:8848
       HIREHUB_SENTINEL_NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       HIREHUB_SENTINEL_NACOS_PASSWORD: ${NACOS_PASSWORD:?set NACOS_PASSWORD (Nacos CLIENT password) first}
     ports: ["9000:9000"]

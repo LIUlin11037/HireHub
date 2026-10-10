@@ -7,7 +7,7 @@
 ## ⚠️ 新会话必读（最高优先级）
 
 1. **动手前必须先通读下面三份文档**（硬性要求，不要只靠本文件）：
-   - `docs/关键决策记录.md`：**39 条 ADR** + 待定事项 Q-01~Q-09（**Q-03/Q-05/Q-07/Q-08 已决议落地**）。**已定的照做；待定的不得擅自决定，必须先和用户讨论。**
+   - `docs/关键决策记录.md`：**41 条 ADR** + 待定事项 Q-01~Q-09（**Q-03/Q-05/Q-07/Q-08 已决议落地**）。**已定的照做；待定的不得擅自决定，必须先和用户讨论。**
    - `docs/架构与实施文档.md`：分期计划、链路设计、接口清单、版本约束。
    - `docs/踩坑记录.md`——里面是反复踩过的坑和最终解法，别重复踩。
 2. **踩坑先查** `docs/踩坑记录.md`——里面是反复踩过的坑和最终解法，别重复踩。
@@ -71,7 +71,7 @@
 | D-27 | **投递状态机**：事件驱动 + 迁移表 + 乐观锁，前端只发事件 |
 | D-28 | **投递与面试解耦**：两套独立状态机，面试取消不回退投递 |
 | D-29 | **自然语言搜索**：大模型（**qwen3.7-plus**）把自然语言格式化成 ES 结构化查询（关键词 + 过滤） |
-| D-30 | **三期不做前端**：交付接口 + 文档 + Apifox 集合，演示走 Swagger UI |
+| D-30 | **三期后端交付形态**：接口 + 文档 + Apifox 集合，演示走 Swagger UI（**前端已由 D-40 改为自研**，见 D-40） |
 | D-31 | **简历解析管线**：上传确认 → MQ 异步 → PDFBox/POI → `resume_parse_detail` + `resume_index`；只回填空字段 |
 | D-32 | **面试提醒延迟消息**：TTL + DLX + **定时兜底扫描** + `interview_reminder` 唯一键去重（不装延迟插件） |
 | D-33 | **服务内方法级鉴权**：引 Security + Header 过滤器构 `SecurityContext` + 过滤器链**全 permitAll** + `@PreAuthorize` |
@@ -81,6 +81,8 @@
 | D-37 | **测试策略**：单测管"纯逻辑 + 边界"（状态机/JWT/校验算法/缓存回归），脚本管"跨服务链路"；**必须显式钉 surefire 3.x**；不做 `@SpringBootTest` 与 Testcontainers |
 | D-38 | **延迟任务改用 Redis ZSet**（修订 D-32）：RabbitMQ 消息级 TTL 有**队头阻塞**（远期提醒堵死近期提醒，踩坑 #43），改为 ZSet + 1 秒轮询 + `ZREM` 认领；删掉两个延迟队列（MQ 队列 9→7）；兜底扫描保留为"主路径失败时的安全网" |
 | D-39 | **安全加固**：密码强度（8~32 且含字母数字）、登录失败锁定（5 次锁 15 分钟，**锁定期内正确密码也拒**、用户名不存在也计数）、把"横向越权/日志脱敏"变成可执行判据（`phase3f`）；**明确不做** HTTPS/WAF/KMS/验证码（缺生产前提）。⚠️ **测试密码由 `123456` 改为 `123456ab`** |
+| D-40 | **前端改为自研**（修订 D-30 / Q-05）：栈 = **Vue 3 + TypeScript + Vite + Element Plus**；本地开发用 **Vite 代理**（`/api`、`/ws`）绕开"网关无 CORS"，**后端零改动**；前端业务规则**以后端状态机为准**；配套 `docs/前端开发指南.md` + `docs/前端状态机映射表.md`（**实测 MinIO 默认放行跨域，附件直传无需配置**） |
+| D-41 | **补三个前端缺口**：① `GET /api/job/mine`（走 MySQL，**草稿/下线职位不在 ES 索引里**；顺带补上全项目缺失的 MyBatis-Plus 分页拦截器，踩坑 #45）② `GET /api/interview/company`（HR 面试列表）③ 投递列表/详情返回 `DeliveryVO`，冗余 jobTitle/companyName/seekerName，**一页固定 3 次批量调用而非 N+1**；`seekerName` 取自**简历名**而非 auth 真实姓名（不破坏 D-23） |
 
 完整版见 `docs/关键决策记录.md`；架构细节见 `docs/架构与实施文档.md`。
 
@@ -138,7 +140,7 @@ SQL：`sql/init-databases.sql` + 7 个 `*-schema.sql`
 
 **二期（已完成，14/15 已验证）**：本地消息表 + MQ 投递最终一致性、通知打通、幂等（SETNX + MQ 消费去重）、Redis 缓存三防 + 布隆过滤器、springdoc（webjar 自托管 Swagger UI）、Micrometer Tracing、Sentinel（Feign fallbackFactory + 网关 gw-flow 限流）、**ES 双索引**（job_index / company_index：IK 分词、MQ 异步同步、对账、相关性、过滤、高亮、search_after）、**自然语言搜索**（D-29：Mock + qwen3.7-plus LLM）、**MinIO 简历预签名直传**、**三层核验**（D-24：实名 + 风险评分 + 法人授权令牌闭环）。
 
-**二期（产物已完成，全栈启动待端口交接）**：全部服务 Docker 化——`docker/Dockerfile`（通用镜像，auth 镜像已验证可构建）、`docker/docker-compose-services.yml`（8 服务 + healthcheck + depends_on 启动顺序 + mem_limit + host.docker.internal 中间件访问）。本地 9000-9007 被 IDE 占用，跑全栈需先停 IDE 服务再 `docker compose -f docker/docker-compose-services.yml up -d --build`。
+**二期（产物已完成）**：全部服务 Docker 化——`docker/Dockerfile`（通用镜像）、`docker/docker-compose-services.yml`（8 服务 + healthcheck + depends_on 启动顺序 + mem_limit + **中间件按容器名访问**）。⚠️ 本地 9000-9007 若被 IDE 占用，必须先停 IDE 服务再 `docker compose -f docker/docker-compose-services.yml up -d --build`（两边同时起会造成"假绿"，见踩坑 #30）。
 
 **一期已决策但代码未落地（三期补课，代码已完成待验证）**：D-02 双 token + refresh 轮换 + jti 黑名单、D-06 `/me/identities` + 成员缓存、D-07 `@PreAuthorize` + job 管理端 + `sys_operation_log`、D-23 求职者隐私模型。**均已写完代码并编译通过。**
 
@@ -156,7 +158,7 @@ SQL：`sql/init-databases.sql` + 7 个 `*-schema.sql`
 **三期已完成的关键实测（都有硬证据）**：
 - **限流**：`Nacos` 里 `hirehub-gateway-flow`（`rule-type: gw-flow`, `count: 100`）→ 150 并发得到 **100×401 + 50×429**。排查踩了三个连环坑，见 `踩坑记录.md` #20。
 - **traceId**：**二期的"全链路 traceId"一直是断的** —— 8 个服务里只有 auth 引了 `spring-boot-starter-actuator`，缺它则 `Tracer` bean 不存在。补上后容器日志出现非空 `[hirehub-delivery,6ab5d88f…,121b6b3e…]`（踩坑记录 #19）。
-- **Docker 全栈**：`mvn -DskipTests package` → `docker compose -f docker/docker-compose-services.yml up -d` → 8 服务 healthy → E2E **49/49**。
+- **Docker 全栈**：`mvn clean package -DskipTests`（⚠️ 必须带 clean，见踩坑 #48）→ `docker compose -f docker/docker-compose-services.yml up -d` → 8 服务 healthy → E2E **49/49**。
 - **注意**：当前服务跑在**容器**里（`restart: unless-stopped`）。要回 IDEA 开发需先 `docker compose -f docker/docker-compose-services.yml down`。
 
 **需要用户操作的事项（现已基本消解）**：
@@ -166,7 +168,7 @@ SQL：`sql/init-databases.sql` + 7 个 `*-schema.sql`
    已固化在 `docker/.env`（gitignore），compose 自动读取。
 4. **内存**：14 个容器约 5.9 GB（ES 1.2G + Nacos 1.0G 最大）。**关 IDEA / 动态壁纸 / 多余浏览器标签比停容器更划算**。
 
-**验证脚本**（六个，都要跑绿）：
+**验证脚本**（七个，都要跑绿）：
 - `scripts/e2e-verify.ps1 -Fresh` —— 一期业务闭环，**49/49**
 - `scripts/phase3-verify.ps1` —— 三期新增能力（D-02 / D-06 / D-07 / D-23），**54/54**
 - `scripts/phase3b-verify.ps1` —— 需先跑 `e2e-verify.ps1 -Fresh` 造数据并 tee 到 `logs/e2e-setup.log`，
@@ -177,6 +179,12 @@ SQL：`sql/init-databases.sql` + 7 个 `*-schema.sql`
   事件级角色规则 + 局外人 403 + **D-28 面试事件不回退投递**）；同样依赖 `logs/e2e-setup.log`，**36/36**
 - `scripts/phase3f-verify.ps1` —— **安全（D-39）**：密码强度 / 登录失败锁定（含"锁定期内正确密码也拒"）/
   横向越权（B 读改不了 A 的简历）/ 敏感信息不落日志；需要 `docker` 清锁定 key 与读容器日志
+- `scripts/phase3g-verify.ps1` —— **D-41 三个补口**：`/job/mine`（草稿/下线可见 + 分页 + 非成员 403）、
+  `/interview/company`（HR 侧列表）、投递列表带展示名（**批量内部接口一次返回多条**）；
+  **自包含 setup**（不依赖 `e2e-setup.log`），**32/32**
+- ⚠️ **`phase3c` / `phase3f` / `phase3g` 需要 `docker`**（改夹具 / 清锁定 key / 直连内部端口）：
+  从外部脚本调用时**必须带沙箱升级**，否则 `docker` 被拦会得到"假红"
+  （我踩过一次：phase3f 报 18/24，实际带上 docker 重跑是 **24/24**）
 - ⚠️ **测试密码约定已由 `123456` 改为 `123456ab`**（`@Size(8)+字母数字` 策略，见 D-39）；
   用旧密码建的既有账号（`alice`/`bob` 那批）在新脚本下登不进去，**请用 `-Fresh` 模式**。
 

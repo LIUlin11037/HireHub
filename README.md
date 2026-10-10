@@ -12,7 +12,7 @@
 - **企业认证可撤销**：定期复核发现注销 → MQ 通知 → 该企业岗位批量下线，另有定时对账补偿（Q-08）
 - **自然语言搜索**：qwen3.7-plus 把「杭州 30k 以上 本科 Java 后端」解析成结构化 ES 查询（[D-29](docs/关键决策记录.md)）
 
-> 所有设计取舍都写成了 **38 条 ADR**，所有踩过的坑都记在 **43 条踩坑记录** 里 —— 这两份文档比代码更能说明"为什么这么做"。
+> 所有设计取舍都写成了 **41 条 ADR**，所有踩过的坑都记在 **50 条踩坑记录** 里 —— 这两份文档比代码更能说明"为什么这么做"。
 
 ---
 
@@ -46,11 +46,13 @@ docker compose -f docker/docker-compose.yml up -d
 
 ```powershell
 $env:JAVA_HOME='<你的 JDK17/21 路径>'
-mvn -B -DskipTests package                                  # 产出各模块 fat jar
+mvn -B clean package -DskipTests                            # 产出各模块 fat jar
+# ⚠️ 必须带 clean：删过源文件却不 clean 时，旧 .class 会留在 jar 里继续跑（见踩坑 #48）
 docker compose -f docker/docker-compose-services.yml up -d --build
 ```
 
-容器之间通过 `host.docker.internal` 访问已发布到宿主机的中间件端口。
+容器之间通过 **Docker 网络里的容器名**（`hirehub-mysql` / `hirehub-redis` / `hirehub-nacos` / `hirehub-rabbitmq` / `hirehub-es` / `hirehub-minio`）访问中间件
+—— 不用 `host.docker.internal`，原因见[踩坑 #47](docs/踩坑记录.md)。
 
 ### 4. 访问
 
@@ -81,6 +83,8 @@ docker compose -f docker/docker-compose-services.yml up -d --build
 | `scripts/phase3c-verify.ps1` | 企业认证复核 + 岗位联动下线（Q-08），含"存续企业不受影响"负例 | **34/34** |
 | `scripts/phase3d-verify.ps1` | 面试状态机全量迁移 + 事件级角色规则 + D-28 解耦 | **36/36** |
 | `scripts/phase3e-verify.ps1` | 公司搜索 / 法人授权 / 邀请码加入 / HR 下线 / 通知已读 / 自然语言搜索 | **29/29** |
+| `scripts/phase3f-verify.ps1` | **安全（D-39）**：密码强度 / 登录失败锁定（含"锁定期内正确密码也拒"）/ 横向越权 / 敏感信息不落日志 | **24/24** |
+| `scripts/phase3g-verify.ps1` | **D-41 三个补口**：`/job/mine`（草稿/下线可见 + 分页 + 非成员 403）/ `/interview/company` / 投递列表带展示名 | **32/32** |
 
 > `phase3b` / `phase3d` / `phase3e` 依赖 `e2e-verify.ps1 -Fresh` 造的数据，
 > 所以**先跑 e2e 并 tee 一份日志**：
@@ -101,7 +105,7 @@ mvn test      # 44 个用例：状态机×2 / JwtUtil / 信用代码 / Mock 核�
 ```
 
 从源码枚举全部接口，再对照脚本调用，输出 **COVERED / INTERNAL / UNCOVERED**，有未覆盖则非零退出。
-**当前：75 个接口 = 67 已覆盖 + 8 个 `/internal/**`（经 Feign 间接走到）+ 0 未覆盖。**
+**当前：79 个接口 = 69 已覆盖 + 10 个 `/internal/**`（经 Feign 间接走到）+ 0 未覆盖。**
 
 ---
 
@@ -133,9 +137,11 @@ Elasticsearch 8.14（IK）· Sentinel 1.8.9 · MinIO · springdoc 2.8.17 · Micr
 | 文档 | 内容 |
 |---|---|
 | [面试问答清单](docs/面试问答.md) | **24 个高频问题的答法**（含"你怎么知道它是对的"这类深挖题）★ 建议先看这份 |
+| [前端开发指南](docs/前端开发指南.md) | 起步配置 / 开发顺序 / 页面清单 / 鉴权与身份切换 / 跨域全景（**开工包已交付到前端工程**） |
+| [前端状态机映射表](docs/前端状态机映射表.md) | 投递 8 态 / 面试 5 态：状态文案、事件、**按角色分的按钮矩阵** |
 | [架构与实施文档](docs/架构与实施文档.md) | 服务边界、数据库、核心链路、接口清单、MQ 拓扑、部署 |
-| [关键决策记录（ADR）](docs/关键决策记录.md) | 38 条决策的**背景 / 备选 / 理由 / 代价** |
-| [踩坑记录](docs/踩坑记录.md) | 43 条真实踩坑与最终解法（含 6 条"假绿/假红"类） |
+| [关键决策记录（ADR）](docs/关键决策记录.md) | 41 条决策的**背景 / 备选 / 理由 / 代价** |
+| [踩坑记录](docs/踩坑记录.md) | 50 条真实踩坑与最终解法（含 11 条"假绿/假红"与自伤类） |
 | [端到端验证](docs/端到端验证.md) | ①–⑧ 手工冒烟路径（curl） |
 | [端到端验证报告](docs/端到端验证报告.md) | 一期验收的逐条实测结果 |
 | [压测报告](docs/压测报告.md) | 真实吞吐 / 延迟数据与"这不是生产容量"的说明 |
@@ -146,7 +152,8 @@ Elasticsearch 8.14（IK）· Sentinel 1.8.9 · MinIO · springdoc 2.8.17 · Micr
 
 ## 已知边界（有意不做，不是没做完）
 
-- **无前端**：交付接口 + Swagger + OpenAPI 文档（[D-30](docs/关键决策记录.md)）
+- **前端自研**（[D-40](docs/关键决策记录.md)）：栈 = Vue 3 + TS + Vite + Element Plus，
+  见[前端开发指南](docs/前端开发指南.md)（原 D-30 的"不做前端"已被 D-40 修订）
 - **不做**：SkyWalking（Q-04）、Canal（Q-02）、独立搜索服务（Q-01）、订单体系（Q-06）、
   WebRTC 实时通话（D-11）、求职者强制实名（Q-09）
 - **外部依赖仍是打底实现**：企业工商核验为 Mock（可切阿里云市场 API，见 D-18）

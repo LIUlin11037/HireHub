@@ -4,10 +4,10 @@ import com.ll.hirehub.common.exception.BusinessException;
 import com.ll.hirehub.common.result.Result;
 import com.ll.hirehub.delivery.dto.ApplyRequest;
 import com.ll.hirehub.delivery.dto.EventRequest;
-import com.ll.hirehub.delivery.entity.Delivery;
 import com.ll.hirehub.delivery.entity.DeliveryResume;
 import com.ll.hirehub.delivery.enums.DeliveryEvent;
 import com.ll.hirehub.delivery.service.DeliveryService;
+import com.ll.hirehub.delivery.vo.DeliveryVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -38,8 +38,8 @@ public class DeliveryController {
     }
 
     @GetMapping("/{id}")
-    public Result<Delivery> get(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
-        return Result.ok(deliveryService.get(userId, id));
+    public Result<DeliveryVO> get(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
+        return Result.ok(deliveryService.getVo(userId, id));
     }
 
     @GetMapping("/{id}/resume-snapshot")
@@ -62,13 +62,13 @@ public class DeliveryController {
     }
 
     @GetMapping("/mine")
-    public Result<List<Delivery>> mine(@RequestHeader("X-User-Id") Long userId) {
+    public Result<List<DeliveryVO>> mine(@RequestHeader("X-User-Id") Long userId) {
         return Result.ok(deliveryService.mine(userId));
     }
 
     @GetMapping("/received")
-    public Result<List<Delivery>> received(@RequestHeader("X-User-Id") Long userId,
-                                           @RequestHeader("X-Company-Id") Long companyId) {
+    public Result<List<DeliveryVO>> received(@RequestHeader("X-User-Id") Long userId,
+                                             @RequestHeader("X-Company-Id") Long companyId) {
         return Result.ok(deliveryService.received(companyId, userId));
     }
 }

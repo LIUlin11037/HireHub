@@ -2,6 +2,7 @@ package com.ll.hirehub.api;
 
 import com.ll.hirehub.api.dto.CompanyMemberDTO;
 import com.ll.hirehub.api.dto.DeliveryDTO;
+import com.ll.hirehub.api.dto.IdNameDTO;
 import com.ll.hirehub.api.dto.JobDTO;
 import com.ll.hirehub.api.dto.OperationLogRequest;
 import com.ll.hirehub.api.dto.ResumeDTO;
@@ -48,6 +49,12 @@ public final class FeignFallbacks {
                 public Result<Integer> getVerifyStatus(Long id) {
                     return Result.ok(null);
                 }
+
+                @Override
+                public Result<List<IdNameDTO>> listNames(List<Long> ids) {
+                    // 降级：空集合。投递列表照常渲染，只是企业名显示为空。
+                    return Result.ok(Collections.emptyList());
+                }
             };
         }
     }
@@ -73,14 +80,36 @@ public final class FeignFallbacks {
     public static class JobClientFallbackFactory implements FallbackFactory<JobClient> {
         @Override
         public JobClient create(Throwable cause) {
-            return id -> Result.ok(null);
+            // ⚠️ JobClient 已不止一个方法，这里不能再写成 lambda
+            return new JobClient() {
+                @Override
+                public Result<JobDTO> getJob(Long id) {
+                    return Result.ok(null);
+                }
+
+                @Override
+                public Result<List<IdNameDTO>> listTitles(List<Long> ids) {
+                    return Result.ok(Collections.emptyList());
+                }
+            };
         }
     }
 
     public static class ResumeClientFallbackFactory implements FallbackFactory<ResumeClient> {
         @Override
         public ResumeClient create(Throwable cause) {
-            return id -> Result.ok(null);
+            // ⚠️ 同上：ResumeClient 也已是多方法接口
+            return new ResumeClient() {
+                @Override
+                public Result<ResumeDTO> getResume(Long id) {
+                    return Result.ok(null);
+                }
+
+                @Override
+                public Result<List<IdNameDTO>> listNames(List<Long> ids) {
+                    return Result.ok(Collections.emptyList());
+                }
+            };
         }
     }
 

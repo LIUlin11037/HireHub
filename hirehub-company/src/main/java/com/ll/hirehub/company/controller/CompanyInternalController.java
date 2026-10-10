@@ -2,6 +2,7 @@ package com.ll.hirehub.company.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ll.hirehub.api.dto.CompanyMemberDTO;
+import com.ll.hirehub.api.dto.IdNameDTO;
 import com.ll.hirehub.common.result.Result;
 import com.ll.hirehub.company.entity.Company;
 import com.ll.hirehub.company.entity.CompanyMember;
@@ -84,6 +85,24 @@ public class CompanyInternalController {
     public Result<Integer> getVerifyStatus(@PathVariable Long id) {
         Company c = companyMapper.selectById(id);
         return Result.ok(c == null ? null : c.getVerifyStatus());
+    }
+
+    /**
+     * 批量查企业名称（投递列表冗余 companyName 用，见 D-41）。
+     * <p>
+     * 一页 N 条投递只调这里一次，而不是逐条 {@code /api/company/{id}}。
+     */
+    @GetMapping("/names")
+    public Result<List<IdNameDTO>> listNames(@RequestParam List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Result.ok(List.of());
+        }
+        List<Company> companies = companyMapper.selectList(new LambdaQueryWrapper<Company>()
+                .select(Company::getId, Company::getName)
+                .in(Company::getId, ids));
+        return Result.ok(companies.stream()
+                .map(c -> new IdNameDTO(c.getId(), c.getName()))
+                .toList());
     }
 
     private CompanyMemberDTO toDto(CompanyMember m, Company company) {
