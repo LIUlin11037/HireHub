@@ -75,7 +75,10 @@ public class CompanySearchSync implements ApplicationRunner {
             }
             MqPayload.CompanySync payload = objectMapper.readValue(message.getPayload(), MqPayload.CompanySync.class);
             Company company = companyMapper.selectById(payload.getCompanyId());
-            if (company != null) {
+            if (company == null) {
+                // 企业已删除：主路径同步删索引（job 侧同款逻辑），丢消息时由反向对账兜底
+                companySearchService.delete(payload.getCompanyId());
+            } else {
                 companySearchService.index(company);
             }
             MqConsumeLog logRow = new MqConsumeLog();

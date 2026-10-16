@@ -7,6 +7,8 @@ import com.ll.hirehub.api.dto.JobDTO;
 import com.ll.hirehub.api.dto.OperationLogRequest;
 import com.ll.hirehub.api.dto.ResumeDTO;
 import com.ll.hirehub.common.result.Result;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.cloud.openfeign.FallbackFactory;
 
 import java.util.Collections;
@@ -22,6 +24,9 @@ import java.util.List;
  * 这样下游挂了，链路不会雪崩成 500，而是退化成明确的业务拒绝。
  */
 public final class FeignFallbacks {
+
+    /** 降级日志（审计 R-05：fallback 不再静默，所有降级路径可用它留痕） */
+    private static final Logger log = LoggerFactory.getLogger(FeignFallbacks.class);
 
     private FeignFallbacks() {
     }
@@ -70,7 +75,11 @@ public final class FeignFallbacks {
 
                 @Override
                 public Result<Void> saveOperationLog(OperationLogRequest req) {
-                    // 审计上报降级：静默失败，绝不能因为审计中心挂了而阻断管理操作
+                    // 审计 R-05：降级不能静默——管理操作审计（D-07 误操作可追溯）丢了必须留痕，
+                    // 否则"审计丢了就丢了"形成静默缺口。记 error 日志带上原因与操作内容待补偿。
+                    log.error("[审计降级] saveOperationLog 失败，操作审计未入库: action={} operator={} target={}/{}, err={}",
+                            req.getAction(), req.getOperatorId(), req.getTargetType(), req.getTargetId(),
+                            cause == null ? "unknown" : cause.getMessage(), cause);
                     return Result.ok();
                 }
             };

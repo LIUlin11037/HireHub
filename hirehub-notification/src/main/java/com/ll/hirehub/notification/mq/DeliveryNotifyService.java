@@ -51,6 +51,8 @@ public class DeliveryNotifyService {
             handleDeliveryEvent(message);
         } else if (MqConst.BizType.INTERVIEW_REMIND.equals(message.getBizType())) {
             handleInterviewRemind(message);
+        } else if (MqConst.BizType.INTERVIEW_EVENT.equals(message.getBizType())) {
+            handleInterviewEvent(message);
         } else {
             log.warn("未知消息类型，跳过: {}", message.getBizType());
         }
@@ -129,5 +131,21 @@ public class DeliveryNotifyService {
 
     private String safe(String s) {
         return s == null ? "-" : s;
+    }
+
+    /**
+     * 面试事件（创建/改期/取消）→ 站内通知（审计 R-02 / §6.9）。
+     * 与面试提醒同一原则：标题与文案由 interview 服务生成好，这里只落库分发。
+     */
+    private void handleInterviewEvent(MqMessage message) throws JsonProcessingException {
+        MqPayload.InterviewEvent payload =
+                objectMapper.readValue(message.getPayload(), MqPayload.InterviewEvent.class);
+        List<Long> receivers = payload.getReceiverIds() == null
+                ? Collections.emptyList() : payload.getReceiverIds();
+        if (receivers.isEmpty()) {
+            return;
+        }
+        notificationService.createInternal("INTERVIEW_" + safe(payload.getEvent()),
+                safe(payload.getTitle()), safe(payload.getContent()), receivers);
     }
 }

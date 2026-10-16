@@ -13,6 +13,7 @@ import com.ll.hirehub.interview.mapper.InterviewMapper;
 import com.ll.hirehub.interview.mapper.InterviewReminderMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 
@@ -98,14 +99,11 @@ public class InterviewReminderService {
                 continue;
             }
 
-            long delayMs = Duration.between(now, remindAt).toMillis();
-            if (delayMs <= 0) {
-                // 提前量已过（例如临时约 2 小时后的面试）：立即提醒，别排一条永远等不到的延迟项
-                log.info("提醒时间已到点，立即发送: interviewId={} tier={}", interview.getId(), tier);
-                fire(reminder, interview);
-            } else {
-                offerDelayMessage(reminder, remindAt);
-            }
+            // 审计 F-06：提前量已过（如临时约 2 小时后的面试）也不在事务内直接 fire ——
+            // 事务内直发 MQ 违反「外部副作用都在 afterCommit」的约定（踩坑 #14），
+            // 回滚会产生幽灵提醒，且 fire 每次换新 messageId，补发时幂等键不同会重复提醒。
+            // 统一投延迟项：score 在过去 = Poller 下一秒拾取，效果与"立即发"相同，但发送发生在事务外。
+            offerDelayMessage(reminder, remindAt);
         }
     }
 
@@ -179,19 +177,23 @@ public class InterviewReminderService {
      * @return true 表示本次抢到了发送权（用于日志与测试断言）
      */
     public boolean fire(InterviewReminder reminder, Interview interview) {
-        // 乐观占位：0 → 1，受影响行数为 1 才算抢到。延迟消息与兜底扫描撞车时只发一次。
+        // 乐观占位：0 → 3(发送中)，受影响行数为 1 才算抢到。延迟消息与兜底扫描撞车时只发一次。
+        // 审计 R-03：占位到「发送中」而不是直接「已发」——是否真到达 broker 由 confirm 回调决定。
         int claimed = reminderMapper.update(null, new LambdaUpdateWrapper<InterviewReminder>()
                 .eq(InterviewReminder::getId, reminder.getId())
                 .eq(InterviewReminder::getStatus, InterviewReminder.STATUS_PENDING)
-                .set(InterviewReminder::getStatus, InterviewReminder.STATUS_SENT)
+                .set(InterviewReminder::getStatus, InterviewReminder.STATUS_SENDING)
                 .set(InterviewReminder::getUpdateTime, LocalDateTime.now()));
         if (claimed == 0) {
             return false;
         }
 
         try {
+            // 审计 R-03：带 CorrelationData 发送，broker ack/nack 由 confirm 回调终态化；
+            // 只看不抛异常不足以确认到达（那只能说明写进了客户端缓冲区）
             rabbitTemplate.convertAndSend(MqConst.EXCHANGE, MqConst.RK_INTERVIEW_REMIND_NOTIFY,
-                    buildNotifyMessage(interview, reminder.getTier()));
+                    buildNotifyMessage(interview, reminder.getTier()),
+                    new CorrelationData(LocalMessageConfirmCallback.REMINDER_PREFIX + reminder.getId()));
             log.info("面试提醒已发出: interviewId={} tier={} seekerId={}",
                     interview.getId(), reminder.getTier(), interview.getSeekerId());
             return true;
@@ -201,6 +203,7 @@ public class InterviewReminderService {
                     interview.getId(), reminder.getTier(), e.getMessage());
             reminderMapper.update(null, new LambdaUpdateWrapper<InterviewReminder>()
                     .eq(InterviewReminder::getId, reminder.getId())
+                    .eq(InterviewReminder::getStatus, InterviewReminder.STATUS_SENDING)
                     .set(InterviewReminder::getStatus, InterviewReminder.STATUS_PENDING)
                     .set(InterviewReminder::getUpdateTime, LocalDateTime.now()));
             return false;
@@ -222,6 +225,32 @@ public class InterviewReminderService {
                 .le(InterviewReminder::getRemindTime, now)
                 .orderByAsc(InterviewReminder::getRemindTime)
                 .last("LIMIT " + Math.min(Math.max(limit, 1), 500)));
+    }
+
+    /**
+     * 审计 R-03：回收「发送中但 confirm 永远没回来」的提醒（占位与 broker 应答之间进程崩溃的窗口）。
+     * 兜底扫描只扫 PENDING 盖不住这个窗口，这里把超时「发送中」翻回 PENDING 交给主流程重发；
+     * 与 confirm 回调、fire 乐观占位共用状态条件，重复回收无副作用。
+     */
+    public int recoverStaleSending(LocalDateTime claimedBefore) {
+        return reminderMapper.update(null, new LambdaUpdateWrapper<InterviewReminder>()
+                .eq(InterviewReminder::getStatus, InterviewReminder.STATUS_SENDING)
+                .lt(InterviewReminder::getUpdateTime, claimedBefore)
+                .set(InterviewReminder::getStatus, InterviewReminder.STATUS_PENDING)
+                .set(InterviewReminder::getUpdateTime, LocalDateTime.now()));
+    }
+
+    /** broker confirm 终态化（审计 R-03）：ack → 已发；nack → 回退待发（兜底扫描重发） */
+    public void settleOnConfirm(Long reminderId, boolean ack) {
+        reminderMapper.update(null, new LambdaUpdateWrapper<InterviewReminder>()
+                .eq(InterviewReminder::getId, reminderId)
+                .eq(InterviewReminder::getStatus, InterviewReminder.STATUS_SENDING)
+                .set(InterviewReminder::getStatus,
+                        ack ? InterviewReminder.STATUS_SENT : InterviewReminder.STATUS_PENDING)
+                .set(InterviewReminder::getUpdateTime, LocalDateTime.now()));
+        if (!ack) {
+            log.warn("面试提醒被 broker 拒绝，回退为待发: reminderId={}", reminderId);
+        }
     }
 
     // ------------------------------------------------------------ 内部

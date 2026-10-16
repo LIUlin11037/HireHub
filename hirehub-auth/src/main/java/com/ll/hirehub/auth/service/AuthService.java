@@ -21,6 +21,7 @@ import com.ll.hirehub.common.util.JwtUtil;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +35,10 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AuthService {
 
+    /** 审计 S-09：用户名不存在时用于"陪跑"的预置 BCrypt 哈希，拉平登录两条路径的计算耗时 */
+    private static final String DUMMY_BCRYPT_HASH =
+            "$2a$10$dXJ3SW6G7P50lGmMkkmwe.20cQQubK3.HZWzG3YB1tlRy.fqvM/BG";
+
     private final SysUserMapper userMapper;
     private final SysRoleMapper roleMapper;
     private final SysUserRoleMapper userRoleMapper;
@@ -44,6 +49,8 @@ public class AuthService {
     private final CompanyClient companyClient;
     /** 登录失败限制（防撞库，见 LoginAttemptGuard） */
     private final LoginAttemptGuard loginGuard;
+    /** PII 字段加密（审计 S-10：身份证密文落库） */
+    private final com.ll.hirehub.auth.util.PiiCrypto piiCrypto;
 
     @Transactional(rollbackFor = Exception.class)
     public void register(RegisterRequest req) {
@@ -60,7 +67,13 @@ public class AuthService {
         user.setNickname(req.getNickname() != null ? req.getNickname() : req.getUsername());
         user.setStatus(1);
         user.setRealNameStatus(0);
-        userMapper.insert(user);
+        try {
+            userMapper.insert(user);
+        } catch (DuplicateKeyException e) {
+            // 审计 F-13：先查后插存在并发窗口——并发注册撞 uk_username/uk_phone 时
+            // 不能兜底成 500，归一化为业务语义 400
+            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "用户名或手机号已存在");
+        }
 
         // 注册接口硬编码只绑定 SEEKER，忽略客户端传入的任何角色字段（见 D-05）
         SysRole seeker = roleMapper.selectOne(
@@ -74,9 +87,9 @@ public class AuthService {
         userRoleMapper.insert(ur);
     }
 
-    public LoginVO login(LoginRequest req) {
+    public LoginVO login(LoginRequest req, String clientIp) {
         // 先看锁定：锁定期内**即使密码正确也拒**，否则爆破方在窗口里撞对一次就绕过了整套防护
-        long locked = loginGuard.lockedSeconds(req.getUsername());
+        long locked = loginGuard.lockedSeconds(req.getUsername(), clientIp);
         if (locked > 0) {
             throw new BusinessException(ResultCode.FORBIDDEN.getCode(),
                     LoginAttemptGuard.describeLock(locked));
@@ -84,19 +97,23 @@ public class AuthService {
 
         SysUser user = userMapper.selectOne(
                 new LambdaQueryWrapper<SysUser>().eq(SysUser::getUsername, req.getUsername()));
-        if (user == null || !passwordEncoder.matches(req.getPassword(), user.getPassword())) {
+        // 审计 S-09：用户不存在时也执行一次等价的 BCrypt 计算，拉平两条路径耗时——
+        // 否则"账号是否存在"会从响应时间差里泄漏（此前只统一了计数与文案，没统一耗时）
+        boolean passwordOk = passwordEncoder.matches(req.getPassword(),
+                user == null ? DUMMY_BCRYPT_HASH : user.getPassword());
+        if (user == null || !passwordOk) {
             // 用户名不存在也计数：否则"账号是否存在"会从响应差异里泄漏出去
-            boolean justLocked = loginGuard.recordFailure(req.getUsername());
+            boolean justLocked = loginGuard.recordFailure(req.getUsername(), clientIp);
             if (justLocked) {
                 throw new BusinessException(ResultCode.FORBIDDEN.getCode(),
-                        LoginAttemptGuard.describeLock(loginGuard.lockedSeconds(req.getUsername())));
+                        LoginAttemptGuard.describeLock(loginGuard.lockedSeconds(req.getUsername(), clientIp)));
             }
             throw new BusinessException(ResultCode.UNAUTHORIZED.getCode(), "用户名或密码错误");
         }
         if (user.getStatus() == null || user.getStatus() != 1) {
             throw new BusinessException("账号已被禁用");
         }
-        loginGuard.clear(req.getUsername());   // 成功即清零
+        loginGuard.clear(req.getUsername(), clientIp);   // 成功即清零
 
         List<String> roles = roleMapper.selectRoleCodesByUserId(user.getId());
 
@@ -124,9 +141,17 @@ public class AuthService {
             throw new BusinessException(ResultCode.TOKEN_INVALID.getCode(), "凭证类型错误，请使用 refreshToken");
         }
 
-        Long userId = Long.valueOf(claims.getSubject());
+        Long userId;
+        try {
+            // 审计 Q-02：subject 非数字时不能漏成 500，按凭证无效处理
+            userId = Long.valueOf(claims.getSubject());
+        } catch (NumberFormatException e) {
+            throw new BusinessException(ResultCode.TOKEN_INVALID);
+        }
         String jti = claims.getId();
-        if (!tokenStore.isRefreshValid(userId, jti)) {
+        // 审计 F-14：原子消费代替"先查后删"——并发重放同一 refreshToken 只有一路能成功，
+        // 另一路走重放分支作废整条凭证链
+        if (!tokenStore.consumeRefresh(userId, jti)) {
             tokenStore.revokeAllRefresh(userId);   // 重放 → 凭证链整体失效
             throw new BusinessException(ResultCode.UNAUTHORIZED.getCode(), "刷新凭证已失效，请重新登录");
         }
@@ -139,7 +164,6 @@ public class AuthService {
             throw new BusinessException("账号已被禁用");
         }
 
-        tokenStore.revokeRefresh(userId, jti);
         List<String> roles = roleMapper.selectRoleCodesByUserId(userId);
         return issue(user, roles);
     }
@@ -263,11 +287,26 @@ public class AuthService {
         if (user == null) {
             throw new BusinessException(ResultCode.NOT_FOUND);
         }
+        // 审计 F-11①：已认证用户不允许直接覆盖姓名与身份证（变更实名属于独立流程，需人工审核）
+        if (user.getRealNameStatus() != null && user.getRealNameStatus() == 1) {
+            throw new BusinessException("已完成实名认证，如需变更请联系平台客服");
+        }
         // 身份证校验位真算法 + 人证比对 Mock
         realNameVerifier.verify(req.getRealName(), req.getIdCard());
 
+        // 审计 F-11②：一证一号——GCM 密文随机 IV 无法查重，用 HMAC 指纹比对
+        String idCardHash = piiCrypto.hash(req.getIdCard());
+        Long dupCount = userMapper.selectCount(new LambdaQueryWrapper<SysUser>()
+                .eq(SysUser::getIdCardHash, idCardHash)
+                .ne(SysUser::getId, userId));
+        if (dupCount != null && dupCount > 0) {
+            throw new BusinessException("该身份证号已完成实名认证，一个身份证仅能绑定一个账号");
+        }
+
         user.setRealName(req.getRealName());
-        user.setIdCardNo(req.getIdCard());
+        // 审计 S-10：身份证属 PII，AES-GCM 加密后落库（此前明文存储，库/备份泄露即全量泄露）
+        user.setIdCardNo(piiCrypto.encrypt(req.getIdCard()));
+        user.setIdCardHash(idCardHash);
         user.setRealNameStatus(1);
         user.setRealNameTime(LocalDateTime.now());
         userMapper.updateById(user);

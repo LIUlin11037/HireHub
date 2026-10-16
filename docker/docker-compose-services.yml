@@ -53,6 +53,9 @@ x-service-common: &service-common
     HIREHUB_ES_HOST: hirehub-es
     # MinIO 的**内部**地址（服务端建桶 / 下载用）
     HIREHUB_MINIO_ENDPOINT: http://hirehub-minio:9000
+    # 本地 docker 环境：显式允许仓库内置开发默认值（JWT 密钥 / admin 初始密码 admin123）。
+    # 生产部署去掉此项（缺省 false），未注入 HIREHUB_JWT_SECRET / HIREHUB_ADMIN_PASSWORD 将拒绝启动（审计 S-04/S-05）
+    HIREHUB_ALLOW_DEV_DEFAULTS: "true"
 
 services:
 

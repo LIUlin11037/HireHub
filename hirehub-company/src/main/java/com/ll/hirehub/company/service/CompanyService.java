@@ -45,6 +45,8 @@ public class CompanyService {
     private final AuthClient authClient;
     private final ApplicationEventPublisher eventPublisher;
     private final CompanyMemberCache memberCache;
+    /** 撤销事务执行器（审计 F-05/F-16：定期复核与管理员手工撤销共用，独立 Bean 保证 @Transactional 生效） */
+    private final CompanyRevokeTxService revokeTxService;
 
     /** 创建企业（创建者自动成为 OWNER，见 D-14 / §6.7） */
     @Transactional(rollbackFor = Exception.class)
@@ -100,6 +102,13 @@ public class CompanyService {
         Company company = requireCompany(companyId);
         requireOwner(companyId, userId);
 
+        // 审计 F-15：状态门——已认证（1）不允许重复提交刷记录/刷授权令牌；
+        // 仅 待审核(0)/已驳回(2)/已撤销(3) 可发起认证
+        if (company.getVerifyStatus() == null
+                || (company.getVerifyStatus() != 0 && company.getVerifyStatus() != 2 && company.getVerifyStatus() != 3)) {
+            throw new BusinessException("该企业已通过认证，无需重复提交");
+        }
+
         // 第一层：个人实名（不信任前端，向 auth 核实）
         Integer realNameStatus = authClient.getRealNameStatus(userId).getData();
         if (realNameStatus == null || realNameStatus != 1) {
@@ -119,7 +128,8 @@ public class CompanyService {
         record.setCompanyName(company.getName());
         record.setLegalPersonName(req.getLegalPersonName());
         record.setLicenseUrl(req.getLicenseUrl());
-        record.setVerifyChannel("MOCK");
+        // 审计 R-08：留档渠道由核验实现自报（D-18 可插拔），不再硬编码 MOCK
+        record.setVerifyChannel(companyVerifier.channel());
         record.setResult(result.isValid() ? "通过" : "驳回");
         record.setRemark(result.getMessage());
         recordMapper.insert(record);
@@ -178,6 +188,11 @@ public class CompanyService {
         // 法人实名：身份证校验位真算法（人证比对 Mock）
         if (!IdCardUtil.isValid(req.getIdCard())) {
             throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "身份证号校验位错误");
+        }
+        // 审计 S-12：持令牌者必须以令牌上登记的法人姓名完成授权——
+        // 姓名是弱证据但不是无证据，不比对则令牌持有者可填任意姓名完成"法人授权"
+        if (auth.getLegalPersonName() != null && !auth.getLegalPersonName().equals(req.getRealName())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "姓名与授权令牌登记的法人姓名不一致");
         }
 
         auth.setStatus(CompanyAuthorization.STATUS_AUTHORIZED);
@@ -251,6 +266,22 @@ public class CompanyService {
         eventPublisher.publishEvent(new CompanySyncEvent(companyId));   // 认证状态变化 → 同步 company_index
     }
 
+    /**
+     * 管理员手工撤销已认证企业（审计 F-16 / Q-08 / §6.10 失效路径之一）。
+     * 复用复核同款事务执行器：乐观更新（1→3）+ 留档 + 同步索引 + 提交后发撤销事件让 job 批量下线岗位。
+     */
+    public void adminRevoke(Long operatorId, Long companyId, String remark) {
+        Company company = requireCompany(companyId);
+        if (company.getVerifyStatus() == null || company.getVerifyStatus() != 1) {
+            throw new BusinessException("仅已认证的企业可撤销");
+        }
+        boolean revoked = revokeTxService.revoke(company,
+                (remark == null || remark.isBlank()) ? "管理员手工撤销" : remark, "MANUAL", operatorId);
+        if (!revoked) {
+            throw new BusinessException("撤销失败：企业认证状态已被并发修改，请刷新后重试");
+        }
+    }
+
     /** 生成 / 重置邀请码（仅 OWNER，见 D-19） */
     public String generateInviteCode(Long userId, Long companyId) {
         Company company = requireCompany(companyId);
@@ -311,7 +342,15 @@ public class CompanyService {
         }
     }
 
-    public List<CompanyMember> members(Long companyId) {
+    /** 成员列表（审计 S-06）：仅限本企业在职成员，此前无任何鉴权可遍历全量成员 */
+    public List<CompanyMember> members(Long userId, Long companyId) {
+        Long count = memberMapper.selectCount(new LambdaQueryWrapper<CompanyMember>()
+                .eq(CompanyMember::getCompanyId, companyId)
+                .eq(CompanyMember::getUserId, userId)
+                .eq(CompanyMember::getStatus, 1));
+        if (count == null || count == 0) {
+            throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "非该企业在职成员");
+        }
         return memberMapper.selectList(new LambdaQueryWrapper<CompanyMember>()
                 .eq(CompanyMember::getCompanyId, companyId)
                 .eq(CompanyMember::getStatus, 1));

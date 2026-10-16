@@ -2,9 +2,14 @@ package com.ll.hirehub.interview.mq;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ll.hirehub.common.mq.MqConst;
+import org.springframework.amqp.core.Binding;
+import org.springframework.amqp.core.BindingBuilder;
+import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.boot.autoconfigure.amqp.RabbitTemplateCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -31,6 +36,23 @@ public class InterviewMqConfig {
     @Bean
     public TopicExchange hirehubExchange() {
         return new TopicExchange(MqConst.EXCHANGE, true, false);
+    }
+
+    /** 面试事件的消费回执队列（审计 R-02）：notification 处理成功后回执，interview 据此把本地消息置为已确认 */
+    @Bean
+    public Queue interviewAckQueue() {
+        return QueueBuilder.durable(MqConst.QUEUE_INTERVIEW_ACK).build();
+    }
+
+    @Bean
+    public Binding interviewAckBinding(Queue interviewAckQueue, TopicExchange hirehubExchange) {
+        return BindingBuilder.bind(interviewAckQueue).to(hirehubExchange).with(MqConst.RK_CONSUME_ACK);
+    }
+
+    /** 给 RabbitTemplate 挂上 publisher confirm（本地消息表「已投递到 broker」的状态回写） */
+    @Bean
+    public RabbitTemplateCustomizer confirmCallbackCustomizer(LocalMessageConfirmCallback callback) {
+        return template -> template.setConfirmCallback(callback);
     }
 
     @Bean

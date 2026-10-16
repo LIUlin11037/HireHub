@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ll.hirehub.common.mq.MqConst;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
+import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
@@ -28,7 +29,27 @@ public class NotificationMqConfig {
 
     @Bean
     public Queue notificationQueue() {
-        return QueueBuilder.durable(MqConst.QUEUE_NOTIFICATION).build();
+        // 审计 R-04：挂死信——永久性错误不再无限 requeue 死循环，超限后落 DLQ 可排查
+        return QueueBuilder.durable(MqConst.QUEUE_NOTIFICATION)
+                .deadLetterExchange(MqConst.DLX)
+                .deadLetterRoutingKey(MqConst.RK_NOTIFICATION_DEAD)
+                .build();
+    }
+
+    /** 死信交换机与通知死信队列（审计 R-04） */
+    @Bean
+    public DirectExchange notificationDlx() {
+        return new DirectExchange(MqConst.DLX, true, false);
+    }
+
+    @Bean
+    public Queue notificationDlq() {
+        return QueueBuilder.durable(MqConst.QUEUE_NOTIFICATION_DLQ).build();
+    }
+
+    @Bean
+    public Binding notificationDlqBinding(Queue notificationDlq, DirectExchange notificationDlx) {
+        return BindingBuilder.bind(notificationDlq).to(notificationDlx).with(MqConst.RK_NOTIFICATION_DEAD);
     }
 
     @Bean
@@ -53,6 +74,14 @@ public class NotificationMqConfig {
                                                      TopicExchange hirehubExchange) {
         return BindingBuilder.bind(notificationQueue).to(hirehubExchange)
                 .with(MqConst.RK_INTERVIEW_REMIND_NOTIFY);
+    }
+
+    /** 面试事件（创建/改期/取消）→ 站内通知（审计 R-02 / §6.9） */
+    @Bean
+    public Binding notificationInterviewEventBinding(Queue notificationQueue,
+                                                     TopicExchange hirehubExchange) {
+        return BindingBuilder.bind(notificationQueue).to(hirehubExchange)
+                .with(MqConst.RK_INTERVIEW_EVENT);
     }
 
     @Bean

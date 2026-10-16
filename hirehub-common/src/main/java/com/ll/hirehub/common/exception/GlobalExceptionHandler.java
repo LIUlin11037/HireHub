@@ -46,13 +46,29 @@ public class GlobalExceptionHandler {
         return badRequest(message);
     }
 
+    /**
+     * 方法级校验（@Validated + 约束注解）失败 → 400（审计 S-14②）。
+     * 此前未声明该 handler， ConstraintViolationException 会漏到兜底 500，参数问题被伪装成系统故障。
+     * 校验消息由注解声明（不含内部实现细节），可以直接透出。
+     */
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
+    public ResponseEntity<Result<Void>> handleConstraintViolation(jakarta.validation.ConstraintViolationException e) {
+        String message = e.getConstraintViolations().stream()
+                .findFirst()
+                .map(v -> v.getMessage())
+                .orElse(ResultCode.PARAM_ERROR.getMessage());
+        return badRequest(message);
+    }
+
     /** 兜底：Spring 抛出的 4xx 客户端错误（缺请求头 / 参数类型不符 / body 不可解析）原样透出状态码 */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result<Void>> handleOther(Exception e) {
         if (e instanceof ErrorResponse errorResponse && errorResponse.getStatusCode().is4xxClientError()) {
             log.warn("客户端请求错误：{}", e.getMessage());
+            // 审计 S-14①：e.getMessage() 会暴露内部细节（如缺失的内部头名 X-User-Id），
+            // 响应体只回安全文案，细节留在服务端日志里
             return ResponseEntity.status(errorResponse.getStatusCode())
-                    .body(Result.fail(ResultCode.PARAM_ERROR.getCode(), e.getMessage()));
+                    .body(Result.fail(ResultCode.PARAM_ERROR.getCode(), ResultCode.PARAM_ERROR.getMessage()));
         }
         log.error("未捕获异常", e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)

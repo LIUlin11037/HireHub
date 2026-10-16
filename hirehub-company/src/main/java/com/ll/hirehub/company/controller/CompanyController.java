@@ -6,9 +6,9 @@ import com.ll.hirehub.company.dto.CreateCompanyRequest;
 import com.ll.hirehub.company.dto.JoinRequest;
 import com.ll.hirehub.company.dto.SubmitVerifyRequest;
 import com.ll.hirehub.company.dto.SubmitVerifyResult;
-import com.ll.hirehub.company.entity.Company;
 import com.ll.hirehub.company.entity.CompanyMember;
 import com.ll.hirehub.company.service.CompanyService;
+import com.ll.hirehub.company.vo.CompanyVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,8 +35,9 @@ public class CompanyController {
     }
 
     @GetMapping("/{id}")
-    public Result<Company> get(@PathVariable Long id) {
-        return Result.ok(companyService.get(id));
+    public Result<CompanyVO> get(@PathVariable Long id) {
+        // 审计 S-01：返回 VO 而不是实体——实体含 inviteCode，泄露即可被用来接管企业
+        return Result.ok(CompanyVO.from(companyService.get(id)));
     }
 
     /** 提交企业认证（三层核验，见 D-24）：返回风险等级与后续动作 */
@@ -63,8 +64,10 @@ public class CompanyController {
     }
 
     @GetMapping("/{id}/members")
-    public Result<List<CompanyMember>> members(@PathVariable Long id) {
-        return Result.ok(companyService.members(id));
+    public Result<List<CompanyMember>> members(@RequestHeader("X-User-Id") Long userId,
+                                               @PathVariable Long id) {
+        // 审计 S-06：成员列表含 userId/角色/法人标记，仅限本企业在职成员可见
+        return Result.ok(companyService.members(userId, id));
     }
 
     @PostMapping("/{id}/invite-code")

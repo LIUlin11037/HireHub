@@ -9,6 +9,7 @@ import com.ll.hirehub.auth.vo.LoginVO;
 import com.ll.hirehub.auth.vo.MeIdentitiesVO;
 import com.ll.hirehub.auth.vo.UserInfoVO;
 import com.ll.hirehub.common.result.Result;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -37,8 +38,19 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public Result<LoginVO> login(@Valid @RequestBody LoginRequest req) {
-        return Result.ok(authService.login(req));
+    public Result<LoginVO> login(@Valid @RequestBody LoginRequest req, HttpServletRequest request) {
+        // 审计 F-12：锁定维度为 用户名|IP，需要真实客户端 IP（网关切片的 X-Forwarded-For 首跳）
+        return Result.ok(authService.login(req, clientIp(request)));
+    }
+
+    /** 取客户端真实 IP：经网关/反代时取 X-Forwarded-For 首跳，否则取直连地址 */
+    private static String clientIp(HttpServletRequest request) {
+        String xff = request.getHeader("X-Forwarded-For");
+        if (xff != null && !xff.isBlank()) {
+            int comma = xff.indexOf(',');
+            return (comma > 0 ? xff.substring(0, comma) : xff).trim();
+        }
+        return request.getRemoteAddr();
     }
 
     /**

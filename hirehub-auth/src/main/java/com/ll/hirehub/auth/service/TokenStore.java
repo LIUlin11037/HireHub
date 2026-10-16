@@ -3,6 +3,7 @@ package com.ll.hirehub.auth.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import com.ll.hirehub.common.constant.RedisKeys;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -25,9 +26,9 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class TokenStore {
 
-    private static final String REFRESH_KEY = "auth:refresh:%d:%s";
-    private static final String REFRESH_INDEX_KEY = "auth:refresh:index:%d";
-    private static final String BLACKLIST_KEY = "auth:blacklist:%s";
+    private static final String REFRESH_KEY = RedisKeys.AUTH_REFRESH_KEY;
+    private static final String REFRESH_INDEX_KEY = RedisKeys.AUTH_REFRESH_INDEX_KEY;
+    private static final String BLACKLIST_KEY = RedisKeys.AUTH_BLACKLIST_KEY;
 
     private final StringRedisTemplate redis;
 
@@ -45,6 +46,31 @@ public class TokenStore {
     public boolean isRefreshValid(Long userId, String jti) {
         return Boolean.TRUE.equals(redis.hasKey(String.format(REFRESH_KEY, userId, jti)));
     }
+
+    /**
+     * 原子消费 refresh token（审计 F-14）：EXISTS+DEL 合并为一段 Lua，
+     * 并发用同一 refreshToken 换新的两个请求只有一个能消费成功——
+     * 原先的"先 isRefreshValid 再 revokeRefresh"是 check-then-act，并发可换出两对新 token。
+     *
+     * @return true 表示本请求成功消费了该 token（有权发新 token）
+     */
+    public boolean consumeRefresh(Long userId, String jti) {
+        String key = String.format(REFRESH_KEY, userId, jti);
+        String indexKey = String.format(REFRESH_INDEX_KEY, userId);
+        Long consumed = redis.execute(CONSUME_REFRESH_SCRIPT,
+                java.util.List.of(key, indexKey), jti);
+        return consumed != null && consumed == 1L;
+    }
+
+    /** Lua：白名单 key 存在则删除（含索引摘除）返回 1，否则返回 0 —— 单脚本原子执行 */
+    private static final org.springframework.data.redis.core.script.RedisScript<Long> CONSUME_REFRESH_SCRIPT =
+            org.springframework.data.redis.core.script.RedisScript.of(
+                    "if redis.call('EXISTS', KEYS[1]) == 1 then "
+                            + "redis.call('DEL', KEYS[1]); "
+                            + "redis.call('SREM', KEYS[2], ARGV[1]); "
+                            + "return 1 "
+                            + "else return 0 end",
+                    Long.class);
 
     /** 轮换：旧 refresh token 立即作废（一次性使用，防重放） */
     public void revokeRefresh(Long userId, String jti) {

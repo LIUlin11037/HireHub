@@ -50,6 +50,22 @@ public class CompanyAdminController {
         return Result.ok();
     }
 
+    /**
+     * 手工撤销已认证企业（审计 F-16 / Q-08 失效路径之一）。
+     * 撤销后该企业职位由 job 侧消费者批量下线（同定期复核的失效链路）。
+     */
+    @PostMapping("/{id}/revoke")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
+    public Result<Void> revoke(@RequestHeader("X-User-Id") Long operatorId,
+                               @PathVariable Long id,
+                               @RequestBody(required = false) AdminVerifyRequest req,
+                               HttpServletRequest httpRequest) {
+        String remark = req == null ? null : req.getRemark();
+        companyService.adminRevoke(operatorId, id, remark);
+        audit(operatorId, "VERIFY_REVOKE", id, "remark=" + remark, httpRequest);
+        return Result.ok();
+    }
+
     @GetMapping("/list")
     @PreAuthorize("hasRole('PLATFORM_ADMIN')")
     public Result<List<Company>> listPending() {

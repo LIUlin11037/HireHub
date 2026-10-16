@@ -1,6 +1,7 @@
 package com.ll.hirehub.job.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ll.hirehub.api.AuthClient;
 import com.ll.hirehub.api.CompanyClient;
@@ -15,12 +16,14 @@ import com.ll.hirehub.job.mapper.JobMapper;
 import com.ll.hirehub.job.search.JobSyncEvent;
 import com.ll.hirehub.job.vo.JobPageVO;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class JobService {
@@ -32,9 +35,11 @@ public class JobService {
     private final BloomFilter bloomFilter;
     private final ApplicationEventPublisher eventPublisher;
 
-    /** 创建职位草稿（需归属正常，见 §7） */
+    /** 创建职位草稿（需实名 + 归属正常，见 §7） */
     @Transactional(rollbackFor = Exception.class)
     public Long draft(Long userId, CreateJobRequest req) {
+        // 审计 F-10：§7 接口契约要求 draft/offline/delete 同样校验实名，此前只有 publish 校验
+        requireRealName(userId);
         requireMembership(req.getCompanyId(), userId);
 
         Job job = new Job();
@@ -61,7 +66,12 @@ public class JobService {
         job.setDeliveryCount(0);
         job.setViewCount(0);
         jobMapper.insert(job);
-        bloomFilter.add(job.getId());   // 新职位同步进布隆，保证 mightContain 不漏报
+        try {
+            bloomFilter.add(job.getId());   // 新职位同步进布隆，保证 mightContain 不漏报
+        } catch (Exception e) {
+            // 审计 Q-06：缓存只是加速层，Redis 故障不应阻断建单（对账/重建会补齐）
+            log.warn("布隆过滤器写入失败（不影响建单，等待重建补齐）: jobId={}, err={}", job.getId(), e.getMessage());
+        }
         return job.getId();
     }
 
@@ -71,10 +81,7 @@ public class JobService {
         Job job = requireJob(jobId);
 
         // ① 实名
-        Integer realNameStatus = authClient.getRealNameStatus(userId).getData();
-        if (realNameStatus == null || realNameStatus != 1) {
-            throw new BusinessException("请先完成实名认证");
-        }
+        requireRealName(userId);
         // ② 归属
         requireMembership(job.getCompanyId(), userId);
         // ③ 企业已认证
@@ -83,12 +90,20 @@ public class JobService {
             throw new BusinessException("企业未通过认证，无法上线职位");
         }
 
-        if (job.getStatus() == null || job.getStatus() != 0) {
-            throw new BusinessException("仅草稿状态可上线");
+        if (job.getStatus() == null || (job.getStatus() != 0 && job.getStatus() != 2)) {
+            throw new BusinessException("仅草稿或已下线状态可上线");
         }
+        // 审计 F-01：已下线（含企业认证失效被强制下线）允许 HR 手动重新上线（Q-08 设计）
+        boolean republish = job.getStatus() == 2;
         job.setStatus(1); // 招聘中
         job.setPublishTime(LocalDateTime.now());
         jobMapper.updateById(job);
+        if (republish) {
+            // updateById 默认忽略 null 字段，清 offlineReason 必须显式 set null
+            jobMapper.update(null, new LambdaUpdateWrapper<Job>()
+                    .eq(Job::getId, jobId)
+                    .set(Job::getOfflineReason, null));
+        }
         jobCacheService.evict(jobId);
         eventPublisher.publishEvent(new JobSyncEvent(jobId, false));   // 同步 job_index
     }
@@ -97,6 +112,7 @@ public class JobService {
     @Transactional(rollbackFor = Exception.class)
     public void offline(Long userId, Long jobId) {
         Job job = requireJob(jobId);
+        requireRealName(userId);   // 审计 F-10
         requireMembership(job.getCompanyId(), userId);
         if (job.getStatus() == null || job.getStatus() != 1) {
             throw new BusinessException("仅招聘中的职位可下线");
@@ -112,6 +128,7 @@ public class JobService {
     @Transactional(rollbackFor = Exception.class)
     public void delete(Long userId, Long jobId) {
         Job job = requireJob(jobId);
+        requireRealName(userId);   // 审计 F-10
         CompanyMemberDTO member = requireMembership(job.getCompanyId(), userId);
         if (!"OWNER".equals(member.getRole())) {
             throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "仅企业 OWNER 可删除职位");
@@ -124,10 +141,19 @@ public class JobService {
     /** 对外读走缓存（缓存三防）；内部 Feign 读仍走 DB，见 JobCacheService 注释 */
     public Job get(Long jobId) {
         Job cached = jobCacheService.getCached(jobId);
-        if (cached != null) {
-            return cached;
+        if (cached == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND);
         }
-        throw new BusinessException(ResultCode.NOT_FOUND);
+        // 审计 F-17①：浏览计数——SQL 自增避免并发丢更新；失败不影响阅读（计数非关键路径）。
+        // 缓存副本的 viewCount 会短暂滞后，统计口径以 DB 为准（JobStatisticsVO 走 SQL 聚合）
+        try {
+            jobMapper.update(null, new LambdaUpdateWrapper<Job>()
+                    .eq(Job::getId, jobId)
+                    .setSql("view_count = view_count + 1"));
+        } catch (Exception e) {
+            log.warn("职位浏览计数自增失败（不影响详情返回）: jobId={}, err={}", jobId, e.getMessage());
+        }
+        return cached;
     }
 
     /**
@@ -162,6 +188,14 @@ public class JobService {
             throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "无职位操作权限");
         }
         return member;
+    }
+
+    /** 实名认证门（审计 F-10）：§7 对 draft/publish/offline/delete 均要求"[OWNER/HR] 实名" */
+    private void requireRealName(Long userId) {
+        Integer realNameStatus = authClient.getRealNameStatus(userId).getData();
+        if (realNameStatus == null || realNameStatus != 1) {
+            throw new BusinessException("请先完成实名认证");
+        }
     }
 
     private Job requireJob(Long id) {

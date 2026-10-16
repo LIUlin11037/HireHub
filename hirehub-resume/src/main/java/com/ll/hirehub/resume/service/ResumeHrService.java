@@ -90,16 +90,20 @@ public class ResumeHrService {
         vo.setJobStatus(preference == null ? null : preference.getJobStatus());
         vo.setParseStatus(resume.getParseStatus());
         vo.setConsentStatus(consent == null ? null : consent.getStatus());
+        // 只有"本企业已获同意"才下发真实信息
+        boolean revealed = consent != null && consent.getStatus() != null
+                && consent.getStatus() == ResumeContactConsent.STATUS_AGREED;
         if (parseDetail != null) {
             vo.setSkills(parseSkills(parseDetail.getSkills()));
             vo.setEducation(parseDetail.getEducation());
             vo.setWorkYears(parseDetail.getWorkYears());
-            vo.setWorkExperience(parseDetail.getWorkExperience());
+            // 审计 S-08：工作经历是从简历原文截取的，含真实任职公司名——
+            // 未获同意前下发会让"在职-考虑机会"的求职者现雇主暴露给所有已认证企业 HR（违背 D-23）
+            if (revealed) {
+                vo.setWorkExperience(parseDetail.getWorkExperience());
+            }
         }
 
-        // 只有"本企业已获同意"才下发真实信息
-        boolean revealed = consent != null && consent.getStatus() != null
-                && consent.getStatus() == ResumeContactConsent.STATUS_AGREED;
         vo.setContactRevealed(revealed);
         if (revealed) {
             vo.setName(resume.getName());

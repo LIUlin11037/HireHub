@@ -34,8 +34,10 @@ public class LocalMessageConfirmCallback implements RabbitTemplate.ConfirmCallba
         }
         String messageId = correlationData.getId();
         if (ack) {
+            // 审计 F-09：只对「待发送」生效，迟到的 confirm 不会把 FAILED/CONFIRMED 翻回 SENT
             localMessageMapper.update(null, new LambdaUpdateWrapper<LocalMessage>()
                     .eq(LocalMessage::getMessageId, messageId)
+                    .eq(LocalMessage::getStatus, LocalMessage.STATUS_PENDING)
                     .set(LocalMessage::getStatus, LocalMessage.STATUS_SENT)
                     .set(LocalMessage::getSendTime, LocalDateTime.now())
                     .set(LocalMessage::getErrorMsg, null));
@@ -56,8 +58,10 @@ public class LocalMessageConfirmCallback implements RabbitTemplate.ConfirmCallba
             return;
         }
         int retry = (message.getRetryCount() == null ? 0 : message.getRetryCount()) + 1;
+        // 审计 F-09：带状态前置条件——已 CONFIRMED 的不再退避、已 FAILED 的不被翻回
         LambdaUpdateWrapper<LocalMessage> update = new LambdaUpdateWrapper<LocalMessage>()
                 .eq(LocalMessage::getMessageId, messageId)
+                .in(LocalMessage::getStatus, LocalMessage.STATUS_PENDING, LocalMessage.STATUS_SENT)
                 .set(LocalMessage::getRetryCount, retry)
                 .set(LocalMessage::getErrorMsg, cause == null ? "broker nack" : truncate(cause));
         if (retry > LocalMessage.MAX_RETRY) {

@@ -72,13 +72,19 @@ public class ResumeSearchService {
                         .sort(so -> so.field(f -> f.field("id")
                                 .order(co.elastic.clients.elasticsearch._types.SortOrder.Asc)));
                 if (searchAfter != null && !searchAfter.isBlank()) {
-                    String[] parts = searchAfter.split(",", 2);
-                    List<co.elastic.clients.elasticsearch._types.FieldValue> cursor = new ArrayList<>();
-                    cursor.add(co.elastic.clients.elasticsearch._types.FieldValue.of(
-                            Double.parseDouble(parts[0])));
-                    cursor.add(co.elastic.clients.elasticsearch._types.FieldValue.of(
-                            Long.parseLong(parts[1])));
-                    s.searchAfter(cursor);
+                    // 审计 Q-08：畸形游标（缺段/非数字）不能让请求炸成 500——
+                    // 解析失败按"无游标"处理（同 JobSearchService.parseSearchAfter 的容错口径）
+                    try {
+                        String[] parts = searchAfter.split(",", 2);
+                        List<co.elastic.clients.elasticsearch._types.FieldValue> cursor = new ArrayList<>();
+                        cursor.add(co.elastic.clients.elasticsearch._types.FieldValue.of(
+                                Double.parseDouble(parts[0])));
+                        cursor.add(co.elastic.clients.elasticsearch._types.FieldValue.of(
+                                Long.parseLong(parts[1])));
+                        s.searchAfter(cursor);
+                    } catch (RuntimeException malformed) {
+                        log.warn("人才库检索游标畸形，按无游标处理: {}", searchAfter);
+                    }
                 }
                 return s;
             }, ResumeDocument.class);

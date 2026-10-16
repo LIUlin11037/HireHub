@@ -34,14 +34,12 @@ public class WsSessionRegistry {
     }
 
     public void unregister(Long userId, WebSocketSession session) {
-        Set<WebSocketSession> userSessions = sessions.get(userId);
-        if (userSessions == null) {
-            return;
-        }
-        userSessions.remove(session);
-        if (userSessions.isEmpty()) {
-            sessions.remove(userId);   // 避免 Map 无限增长
-        }
+        // 审计 Q-03：remove→isEmpty→remove 非原子——竞态下会把"刚注册的新连接所在的空槽判断"
+        // 变成误删整个 userId 条目。computeIfPresent 把「移除会话 + 空了摘条目」合成一次原子操作
+        sessions.computeIfPresent(userId, (key, userSessions) -> {
+            userSessions.remove(session);
+            return userSessions.isEmpty() ? null : userSessions;   // 返回 null = 原子移除条目
+        });
         log.info("WebSocket 连接关闭: userId={} sessionId={}", userId, session.getId());
     }
 

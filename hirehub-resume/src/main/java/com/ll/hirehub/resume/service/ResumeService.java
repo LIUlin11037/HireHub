@@ -50,6 +50,18 @@ public class ResumeService {
         return requireOwner(userId, resumeId);
     }
 
+    /**
+     * 删除简历（审计 F-17②：PII 删除权）。
+     * 逻辑删除 + 同步把简历从索引移除——否则"删了简历仍能被 HR 搜到"，
+     * 这也是 ResumeIndexService.refresh 里 remove 分支此前永远走不到的原因。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void delete(Long userId, Long resumeId) {
+        requireOwner(userId, resumeId);
+        resumeMapper.deleteById(resumeId);   // 逻辑删除（@TableLogic）
+        resumeIndexService.remove(resumeId);
+    }
+
     public List<Resume> mine(Long userId) {
         return resumeMapper.selectList(
                 new LambdaQueryWrapper<Resume>().eq(Resume::getUserId, userId));

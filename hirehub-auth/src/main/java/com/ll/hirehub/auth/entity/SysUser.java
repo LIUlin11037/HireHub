@@ -26,6 +26,8 @@ public class SysUser {
 
     private String realName;
     private String idCardNo;
+    /** 身份证 HMAC-SHA256 指纹（审计 F-11）：GCM 密文无法查重，用不可逆指纹支撑"一证一号" */
+    private String idCardHash;
     private Integer realNameStatus;
     private LocalDateTime realNameTime;
 

@@ -43,6 +43,12 @@ public class InterviewReminderScanner {
     @Scheduled(fixedDelay = 300_000, initialDelay = 60_000)
     public void scan() {
         try {
+            // 审计 R-03：先回收「发送中但 confirm 没回来」的提醒（进程崩在占位与 broker 应答之间），
+            // 翻回 PENDING 后由下面的正常补发流程处理
+            int recovered = reminderService.recoverStaleSending(LocalDateTime.now().minusMinutes(5));
+            if (recovered > 0) {
+                log.warn("回收 {} 条发送中超时的面试提醒（翻回待发）", recovered);
+            }
             List<InterviewReminder> due = reminderService.dueReminders(LocalDateTime.now(), BATCH);
             if (due.isEmpty()) {
                 return;

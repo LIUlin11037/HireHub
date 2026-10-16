@@ -39,6 +39,46 @@ class JwtUtilTest {
     }
 
     @Test
+    @DisplayName("启动校验（S-04）：密钥为空 → fail-fast")
+    void validateRejectsBlankSecret() {
+        JwtUtil j = new JwtUtil();
+        ReflectionTestUtils.setField(j, "secret", "");
+        assertThatThrownBy(j::validateSecret)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("未配置");
+    }
+
+    @Test
+    @DisplayName("启动校验（S-04）：密钥不足 32 字节 → fail-fast")
+    void validateRejectsShortSecret() {
+        JwtUtil j = new JwtUtil();
+        ReflectionTestUtils.setField(j, "secret", "too-short");
+        assertThatThrownBy(j::validateSecret)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("32 字节");
+    }
+
+    @Test
+    @DisplayName("启动校验（S-04）：开发默认密钥未显式开启 → fail-fast；显式开启 → 放行")
+    void validateRejectsDevSecretUnlessExplicitlyAllowed() {
+        JwtUtil j = new JwtUtil();
+        ReflectionTestUtils.setField(j, "secret", JwtUtil.DEV_SECRET);
+        ReflectionTestUtils.setField(j, "allowDevDefaults", false);
+        assertThatThrownBy(j::validateSecret)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("开发默认");
+
+        ReflectionTestUtils.setField(j, "allowDevDefaults", true);
+        j.validateSecret();   // 不抛异常即通过
+    }
+
+    @Test
+    @DisplayName("启动校验（S-04）：合规的非默认密钥 → 放行")
+    void validateAcceptsProperSecret() {
+        jwt.validateSecret();   // SECRET 非默认且 ≥32 字节，不抛异常即通过
+    }
+
+    @Test
     @DisplayName("access token：subject=userId、带 roles、typ=access、保留 jti")
     void accessTokenCarriesRolesAndJti() {
         String token = jwt.generateAccessToken(42L, List.of("SEEKER", "PLATFORM_ADMIN"), "jti-1");

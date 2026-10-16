@@ -65,12 +65,17 @@ public class NotificationService {
         n.setTitle(title);
         n.setContent(content);
         notificationMapper.insert(n);
-        for (Long receiverId : receiverIds) {
+        // 审计 Q-04：批量 insert（MyBatis-Plus 3.5.x 支持 Collection 参数），N 个接收人一次 RT，
+        // 此前逐条 insert 是 N 次网络往返
+        List<NotificationReceiver> receivers = receiverIds.stream().map(receiverId -> {
             NotificationReceiver r = new NotificationReceiver();
             r.setNotificationId(n.getId());
             r.setReceiverId(receiverId);
             r.setReadStatus(0);
-            receiverMapper.insert(r);
+            return r;
+        }).toList();
+        if (!receivers.isEmpty()) {
+            receiverMapper.insert(receivers);
         }
         // WebSocket 推送放到事务提交后（见 D-34 / 踩坑记录 #14）：
         // 推送是外部副作用，不参与回滚。若在提交前推，"通知落库失败但用户已经收到推送"，

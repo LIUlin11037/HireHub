@@ -35,6 +35,7 @@ public class DeliveryCountService {
     private final MqConsumeLogMapper consumeLogMapper;
     private final JobMapper jobMapper;
     private final ObjectMapper objectMapper;
+    private final com.ll.hirehub.job.cache.JobCacheService jobCacheService;
 
     /**
      * @return true 表示本次真的处理了；false 表示重复消息已消费过
@@ -55,6 +56,9 @@ public class DeliveryCountService {
             jobMapper.update(null, new LambdaUpdateWrapper<Job>()
                     .eq(Job::getId, payload.getJobId())
                     .setSql("delivery_count = delivery_count + 1"));
+            // 审计 Q-09：投递数变了必须失效职位缓存，否则缓存副本的 deliveryCount 最长陈旧 30 分钟。
+            // 提交后再失效（同 D-06 成员缓存纪律）：先删缓存又回滚会把旧值重新填回
+            evictCacheAfterCommit(payload.getJobId());
         }
 
         MqConsumeLog logRow = new MqConsumeLog();
@@ -63,5 +67,20 @@ public class DeliveryCountService {
         logRow.setCreateTime(LocalDateTime.now());
         consumeLogMapper.insert(logRow); // 并发下由 uk(message_id, consumer) 兜底
         return true;
+    }
+
+    /** 提交后失效职位缓存（无事务时直接失效，如未来被非事务路径调用） */
+    private void evictCacheAfterCommit(Long jobId) {
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            jobCacheService.evict(jobId);
+                        }
+                    });
+        } else {
+            jobCacheService.evict(jobId);
+        }
     }
 }

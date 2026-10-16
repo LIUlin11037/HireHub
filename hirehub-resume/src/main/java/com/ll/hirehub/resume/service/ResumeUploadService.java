@@ -13,6 +13,8 @@ import io.minio.BucketExistsArgs;
 import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
+import io.minio.StatObjectArgs;
+import io.minio.StatObjectResponse;
 import io.minio.http.Method;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +44,9 @@ import java.util.concurrent.TimeUnit;
 @Service
 @RequiredArgsConstructor
 public class ResumeUploadService implements ApplicationRunner {
+
+    /** 附件大小上限 20MB（审计 S-07，confirm 时校验） */
+    private static final long MAX_ATTACHMENT_BYTES = 20L * 1024 * 1024;
 
     /** 服务端自身访问 MinIO（建桶、下载附件解析） */
     private final MinioClient minioClient;
@@ -98,6 +103,27 @@ public class ResumeUploadService implements ApplicationRunner {
     /** 前端直传成功后的回调：把 objectKey 落库，并发消息触发异步解析（见 Q-03） */
     public void confirm(Long userId, Long resumeId, String objectKey) {
         Resume resume = requireOwn(userId, resumeId);
+        // 审计 S-07：objectKey 必须属于本简历（前缀就是本服务签发的格式），
+        // 否则可绑定桶内任意对象——绕过预签名的 .pdf 约束，甚至挂到他人附件上
+        String requiredPrefix = "resume/" + resumeId + "/";
+        if (objectKey == null || !objectKey.startsWith(requiredPrefix)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "非法的附件标识");
+        }
+        if (!objectKey.toLowerCase().endsWith(".pdf")) {
+            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "仅支持 PDF 附件");
+        }
+        // 确认对象真实存在且大小合规（预签名 URL 只约束"能传"，不约束"传了什么"）
+        try {
+            StatObjectResponse stat = minioClient.statObject(
+                    StatObjectArgs.builder().bucket(bucket).object(objectKey).build());
+            if (stat.size() > MAX_ATTACHMENT_BYTES) {
+                throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "附件大小超过 20MB 限制");
+            }
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "附件不存在或尚未上传成功");
+        }
         resume.setAttachmentKey(objectKey);
         resume.setParseStatus(0);   // 待解析
         resumeMapper.updateById(resume);

@@ -3,6 +3,8 @@ package com.ll.hirehub.common.util;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -22,6 +24,7 @@ import java.util.List;
  * 两者用 {@code typ} claim 区分，避免 refresh token 被当成 access token 使用。
  * 注意：secret 需 ≥ 32 字节（HS256 最低要求），通过配置注入。
  */
+@Slf4j
 @Component
 public class JwtUtil {
 
@@ -32,15 +35,42 @@ public class JwtUtil {
 
     private static final String CLAIM_TYP = "typ";
 
-    // 默认仅用于本地开发；生产必须通过环境变量覆盖（见架构文档 D-02 / D-18）
-    @Value("${hirehub.jwt.secret:hirehub-dev-secret-please-override-0123456789}")
+    /** 仓库内置的开发默认密钥（审计 S-04）：仅本地开发可用，且必须显式开启 allow-dev-defaults */
+    static final String DEV_SECRET = "hirehub-dev-secret-please-override-0123456789";
+
+    // 不再给代码级默认值：缺失即启动失败（审计 S-04）。
+    // 本地开发的默认值在 application.yml 里，需配合 hirehub.security.allow-dev-defaults=true 使用。
+    @Value("${hirehub.jwt.secret:}")
     private String secret;
+
+    @Value("${hirehub.security.allow-dev-defaults:false}")
+    private boolean allowDevDefaults;
 
     @Value("${hirehub.jwt.access-expire-seconds:1800}")
     private long accessExpireSeconds;
 
     @Value("${hirehub.jwt.refresh-expire-seconds:604800}")
     private long refreshExpireSeconds;
+
+    /** 启动期校验（审计 S-04）：密钥缺失/过短/生产误用开发默认值 → fail-fast，绝不通关 */
+    @PostConstruct
+    void validateSecret() {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException(
+                    "hirehub.jwt.secret 未配置：JWT 签名密钥必须通过 HIREHUB_JWT_SECRET 注入");
+        }
+        if (secret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException("hirehub.jwt.secret 长度不足 32 字节（HS256 最低要求）");
+        }
+        if (DEV_SECRET.equals(secret)) {
+            if (!allowDevDefaults) {
+                throw new IllegalStateException(
+                        "正在使用仓库内置的开发默认 JWT 密钥：生产环境必须注入 HIREHUB_JWT_SECRET；"
+                                + "本地开发请显式设置 hirehub.security.allow-dev-defaults=true");
+            }
+            log.warn("正在使用开发默认 JWT 密钥（allow-dev-defaults=true），仅限本地开发，严禁生产使用");
+        }
+    }
 
     private SecretKey key() {
         return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));

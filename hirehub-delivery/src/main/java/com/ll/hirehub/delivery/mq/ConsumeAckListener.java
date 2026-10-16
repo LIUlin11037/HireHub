@@ -38,8 +38,10 @@ public class ConsumeAckListener {
                              @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag) throws IOException {
         try {
             if (ack != null && ack.getMessageId() != null) {
+                // 审计 F-09：只对 SENT 生效，迟到的回执不会把 FAILED 翻回 CONFIRMED
                 localMessageMapper.update(null, new LambdaUpdateWrapper<LocalMessage>()
                         .eq(LocalMessage::getMessageId, ack.getMessageId())
+                        .eq(LocalMessage::getStatus, LocalMessage.STATUS_SENT)
                         .set(LocalMessage::getStatus, LocalMessage.STATUS_CONFIRMED)
                         .set(LocalMessage::getAckTime, LocalDateTime.now()));
                 log.debug("收到消费回执: messageId={}, consumer={}", ack.getMessageId(), ack.getConsumer());

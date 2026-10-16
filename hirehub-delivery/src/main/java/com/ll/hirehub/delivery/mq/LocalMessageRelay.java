@@ -6,6 +6,7 @@ import com.ll.hirehub.common.mq.MqConst;
 import com.ll.hirehub.common.mq.MqMessage;
 import com.ll.hirehub.delivery.entity.LocalMessage;
 import com.ll.hirehub.delivery.mapper.LocalMessageMapper;
+import com.ll.hirehub.common.constant.RedisKeys;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
@@ -31,9 +32,15 @@ import java.util.List;
 @RequiredArgsConstructor
 public class LocalMessageRelay {
 
-    private static final String LOCK_KEY = "lock:local-message";
+    private static final String LOCK_KEY = RedisKeys.LOCK_LOCAL_MESSAGE;
     /** 单次扫描上限，避免一次拉太多把内存和 broker 打满 */
     private static final int BATCH_SIZE = 100;
+    /**
+     * relay 锁 TTL（审计 R-07）：批内 100 条同步 dispatch，慢 broker 时可能超过 30s，
+     * TTL 过短会让第二实例并发跑同一批造成重复投递（下游幂等可兜但产生回执噪声）。
+     * 120s 覆盖慢 broker 场景；RedisLock 无续期，任务耗时必须显著小于该值。
+     */
+    private static final Duration RELAY_LOCK_TTL = Duration.ofSeconds(120);
     /** 超过这个时间还没收到消费回执，认为可能丢了，重新投递 */
     private static final Duration RECONCILE_DELAY = Duration.ofMinutes(5);
     /** 已确认消息保留天数（便于排查，之后物理删除） */
@@ -47,7 +54,7 @@ public class LocalMessageRelay {
     /** 步骤②：定时把待发送的消息投出去 */
     @Scheduled(fixedDelayString = "${hirehub.mq.relay-interval-ms:5000}")
     public void relayPending() {
-        if (!redisLock.tryLock(LOCK_KEY + ":relay", Duration.ofSeconds(30))) {
+        if (!redisLock.tryLock(LOCK_KEY + ":relay", RELAY_LOCK_TTL)) {
             return;
         }
         List<LocalMessage> pending = localMessageMapper.selectList(new LambdaQueryWrapper<LocalMessage>()
@@ -79,17 +86,21 @@ public class LocalMessageRelay {
         for (LocalMessage message : stuck) {
             int retry = (message.getRetryCount() == null ? 0 : message.getRetryCount()) + 1;
             if (retry > LocalMessage.MAX_RETRY) {
+                // 审计 F-09：带状态前置条件，晚到的消费回执不会被覆盖
                 localMessageMapper.update(null, new LambdaUpdateWrapper<LocalMessage>()
                         .eq(LocalMessage::getId, message.getId())
+                        .eq(LocalMessage::getStatus, LocalMessage.STATUS_SENT)
                         .set(LocalMessage::getStatus, LocalMessage.STATUS_FAILED)
                         .set(LocalMessage::getRetryCount, retry)
                         .set(LocalMessage::getErrorMsg, "对账重投超限：消费端始终未回执"));
                 log.error("本地消息置为失败待人工排查: messageId={}", message.getMessageId());
                 continue;
             }
-            // 打回待发送，由 relayPending 下一轮重新投递（保持「重新投递」逻辑只有一处）
+            // 打回待发送（审计 F-09：带状态前置条件，期间已 CONFIRMED 的消息不会被翻回重投），
+            // 由 relayPending 下一轮重新投递（保持「重新投递」逻辑只有一处）
             localMessageMapper.update(null, new LambdaUpdateWrapper<LocalMessage>()
                     .eq(LocalMessage::getId, message.getId())
+                    .eq(LocalMessage::getStatus, LocalMessage.STATUS_SENT)
                     .set(LocalMessage::getStatus, LocalMessage.STATUS_PENDING)
                     .set(LocalMessage::getRetryCount, retry)
                     .set(LocalMessage::getNextRetryTime, LocalDateTime.now())

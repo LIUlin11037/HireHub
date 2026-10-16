@@ -27,10 +27,16 @@ public class InterviewReminder {
 
     /** 待发 */
     public static final int STATUS_PENDING = 0;
-    /** 已发 */
+    /** 已发（broker 已确认收到） */
     public static final int STATUS_SENT = 1;
     /** 已作废（面试取消 / 改期被取代 / 面试已开始） */
     public static final int STATUS_CANCELLED = 2;
+    /**
+     * 发送中（审计 R-03）：已占位、等待 broker confirm 的中间态。
+     * 进程若崩在这个状态，兜底扫描会把它翻回 PENDING 重发——
+     * 没有它，「占位成功但消息没到 broker」与「真的发成功了」在库里无法区分。
+     */
+    public static final int STATUS_SENDING = 3;
 
     public static final String TIER_1D = "1D";
     public static final String TIER_30M = "30M";
@@ -49,7 +55,7 @@ public class InterviewReminder {
     /** 应当提醒的时间点 = 面试时间 − 提前量 */
     private LocalDateTime remindTime;
 
-    /** 0 待发 / 1 已发 / 2 已作废 */
+    /** 0 待发 / 1 已发 / 2 已作废 / 3 发送中（等 broker confirm，见 R-03） */
     private Integer status;
 
     private LocalDateTime createTime;

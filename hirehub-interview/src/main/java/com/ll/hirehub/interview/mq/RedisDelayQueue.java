@@ -1,5 +1,6 @@
 package com.ll.hirehub.interview.mq;
 
+import com.ll.hirehub.common.constant.RedisKeys;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -39,8 +40,8 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class RedisDelayQueue {
 
-    private static final String ZSET_KEY = "hirehub:delay:interview-remind";
-    private static final String PAYLOAD_KEY = "hirehub:delay:interview-remind:payload";
+    private static final String ZSET_KEY = RedisKeys.DELAY_INTERVIEW_REMIND_ZSET;
+    private static final String PAYLOAD_KEY = RedisKeys.DELAY_INTERVIEW_REMIND_PAYLOAD;
 
     private final StringRedisTemplate redis;
 

@@ -26,6 +26,12 @@ public class MockCompanyVerifier implements CompanyVerifier {
     /** 工商经营状态：注销 */
     public static final String STATUS_REVOKED = "注销";
 
+    /** 审计 R-08：留档渠道由实现自报，接真实渠道后不再失真 */
+    @Override
+    public String channel() {
+        return "MOCK";
+    }
+
     @Override
     public CompanyVerifyResult verify(String companyName, String creditCode, String legalPersonName) {
         if (!CreditCodeUtil.isValid(creditCode)) {

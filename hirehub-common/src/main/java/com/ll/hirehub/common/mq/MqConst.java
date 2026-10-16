@@ -53,6 +53,16 @@ public final class MqConst {
     // QUEUE_INTERVIEW_REMIND 已删除）—— 消息级 TTL 有队头阻塞，改用 Redis ZSet，见 D-38 / 踩坑 #43
     /** 三期：企业认证撤销 → job 批量下线该企业岗位（见 Q-08 状态联动） */
     public static final String QUEUE_JOB_COMPANY_REVOKE = "hirehub.job.company-revoke";
+    /** 面试事件（创建/改期/取消）→ 站内通知（审计 R-02，复用 D-01 本地消息表机制） */
+    public static final String RK_INTERVIEW_EVENT = "interview.event";
+    /** 面试事件的消费回执队列（interview 服务本地消息表确认用） */
+    public static final String QUEUE_INTERVIEW_ACK = "hirehub.interview.ack";
+    /** 死信交换机（审计 R-04）：消费反复失败的消息最终落地排查用 */
+    public static final String DLX = "hirehub.dlx";
+    /** 通知队列的死信队列 */
+    public static final String QUEUE_NOTIFICATION_DLQ = "hirehub.notification.dlq";
+    /** 通知队列死信路由键 */
+    public static final String RK_NOTIFICATION_DEAD = "notification.dead";
 
     /** 业务类型 */
     public static final class BizType {
@@ -77,6 +87,8 @@ public final class MqConst {
         public static final String INTERVIEW_REMIND = "INTERVIEW_REMIND";
         /** 企业认证被撤销 → job 批量下线该企业岗位（见 Q-08 / D-18） */
         public static final String COMPANY_VERIFY_REVOKED = "COMPANY_VERIFY_REVOKED";
+        /** 面试事件（创建/改期/取消）→ 通知对方（审计 R-02 / §6.9） */
+        public static final String INTERVIEW_EVENT = "INTERVIEW_EVENT";
     }
 
     /** 消费者标识，写进 mq_consume_log 便于排查 */

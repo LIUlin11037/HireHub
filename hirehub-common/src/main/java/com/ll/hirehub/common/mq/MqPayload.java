@@ -114,6 +114,27 @@ public final class MqPayload {
     }
 
     /**
+     * 面试事件：{@code interview.event} 的负载（审计 R-02 / §6.9）。
+     * <p>
+     * 与 {@link InterviewRemind} 同一原则：标题与文案由 interview 服务生成好——
+     * 它掌握面试时间、轮次与取消方；notification 只负责「落库 + 分发给接收人」。
+     */
+    @Data
+    public static class InterviewEvent implements Serializable {
+        private Long interviewId;
+        private Long deliveryId;
+        /** CREATED / RESCHEDULED / CANCELLED */
+        private String event;
+        /** 取消方（event=CANCELLED 时有值）：SEEKER / HR */
+        private String cancelledBy;
+        /** 通知标题（如「面试改期通知」） */
+        private String title;
+        /** 完整文案（含面试时间与轮次） */
+        private String content;
+        private List<Long> receiverIds;
+    }
+
+    /**
      * 企业认证被撤销：{@code company.verify-revoked} 的负载（见 Q-08）。
      * <p>
      * 只带 companyId 与原因 —— job 侧据此把该企业的在招职位批量下线。

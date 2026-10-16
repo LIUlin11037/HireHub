@@ -44,7 +44,10 @@ public class GatewayFlowRuleDataSourceConfig {
     @Value("${hirehub.sentinel.nacos.username:nacos}")
     private String username;
 
-    @Value("${hirehub.sentinel.nacos.password:nacos}")
+    // 审计 R-09：不再给代码级默认密码（nacos/nacos 硬编码进 Git）。
+    // 本地开发走 docker-compose 显式注入的环境变量；缺失时仅告警不阻断（Sentinel 数据源只是流控规则下发通道，
+    // 连不上 Nacos 不该让网关拒绝服务——网关的 fail-fast 纪律只适用于身份/密钥类配置，见 S-04/S-05）
+    @Value("${hirehub.sentinel.nacos.password:${NACOS_PASSWORD:}}")
     private String password;
 
     @Value("${hirehub.sentinel.nacos.group-id:DEFAULT_GROUP}")
@@ -55,6 +58,10 @@ public class GatewayFlowRuleDataSourceConfig {
 
     @PostConstruct
     public void registerGatewayFlowRules() {
+        if (password == null || password.isBlank()) {
+            log.warn("Sentinel Nacos 密码未配置（hirehub.sentinel.nacos.password / NACOS_PASSWORD），"
+                    + "Nacos 开启鉴权时流控规则将无法下发");
+        }
         try {
             Properties properties = new Properties();
             properties.setProperty(PropertyKeyConst.SERVER_ADDR, serverAddr);

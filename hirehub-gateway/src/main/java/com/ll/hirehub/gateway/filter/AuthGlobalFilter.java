@@ -2,6 +2,7 @@ package com.ll.hirehub.gateway.filter;
 
 import com.ll.hirehub.common.result.ResultCode;
 import com.ll.hirehub.common.util.JwtUtil;
+import com.ll.hirehub.common.constant.RedisKeys;
 import io.jsonwebtoken.Claims;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
@@ -43,7 +44,7 @@ import java.util.Set;
 @Component
 public class AuthGlobalFilter implements GlobalFilter, Ordered {
 
-    private static final String BLACKLIST_KEY = "auth:blacklist:%s";
+    private static final String BLACKLIST_KEY = RedisKeys.AUTH_BLACKLIST_KEY;
     private static final String TRACE_HEADER = "X-Trace-Id";
 
     /**
@@ -86,7 +87,15 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
 
         String path = exchange.getRequest().getURI().getPath();
         if (WHITE_LIST.contains(path) || path.startsWith(WS_PREFIX)) {
-            return chain.filter(exchange);
+            // 白名单也要先剥离客户端自带的身份头：下游 HeaderAuthenticationFilter 无条件信任
+            // X-User-Id / X-User-Roles，原样透传等于放行伪造身份（"身份只能由网关注入"对所有路径成立）。
+            ServerHttpRequest sanitized = exchange.getRequest().mutate()
+                    .headers(h -> {
+                        h.remove("X-User-Id");
+                        h.remove("X-User-Roles");
+                    })
+                    .build();
+            return chain.filter(exchange.mutate().request(sanitized).build());
         }
 
         String auth = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);

@@ -10,6 +10,7 @@ import com.ll.hirehub.resume.service.ResumeService;
 import com.ll.hirehub.resume.service.ResumeUploadService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -47,6 +48,13 @@ public class ResumeController {
     @GetMapping("/{id}")
     public Result<Resume> get(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
         return Result.ok(resumeService.get(userId, id));
+    }
+
+    /** 删除简历（审计 F-17②：PII 删除权）——逻辑删除并同步移出搜索索引 */
+    @DeleteMapping("/{id}")
+    public Result<Void> delete(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
+        resumeService.delete(userId, id);
+        return Result.ok();
     }
 
     @GetMapping("/mine")

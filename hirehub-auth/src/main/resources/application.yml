@@ -26,6 +26,12 @@ hirehub:
     secret: ${HIREHUB_JWT_SECRET:hirehub-dev-secret-please-override-0123456789}
     access-expire-seconds: 1800        # 30min
     refresh-expire-seconds: 604800     # 7d
+  # 审计 S-04/S-05：仓库内置的开发默认值（JWT 密钥 / admin123）必须显式开启才可用，
+  # 生产缺省 false 时启动直接失败；本地 docker 已在 compose 里显式置 true
+  security:
+    allow-dev-defaults: ${HIREHUB_ALLOW_DEV_DEFAULTS:false}
+    # 审计 S-10：PII（身份证）AES-GCM 加密密钥，生产必须注入 HIREHUB_PII_KEY
+    pii-key: ${HIREHUB_PII_KEY:}
 
 mybatis-plus:
   configuration:

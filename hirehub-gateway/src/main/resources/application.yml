@@ -68,6 +68,9 @@ hirehub:
   jwt:
     secret: ${HIREHUB_JWT_SECRET:hirehub-dev-secret-please-override-0123456789}
     access-expire-seconds: 1800
+  # 审计 S-04：开发默认密钥必须显式开启才可用（本地 compose 已置 true）
+  security:
+    allow-dev-defaults: ${HIREHUB_ALLOW_DEV_DEFAULTS:false}
   # 三期：网关限流规则的 Nacos 坐标（由 GatewayFlowRuleDataSourceConfig 读取）
   sentinel:
     nacos:

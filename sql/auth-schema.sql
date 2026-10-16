@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS sys_user (
     status           TINYINT      NOT NULL DEFAULT 1,  -- 1 正常 / 0 禁用
     last_login_time  DATETIME,
     real_name        VARCHAR(64),
-    id_card_no       VARCHAR(64),                       -- ⚠️ TODO 生产需加密存储（见 D-16/D-18）
+    id_card_no       VARCHAR(64),                       -- AES-GCM 密文（审计 S-10）
+    id_card_hash     VARCHAR(64),                       -- HMAC-SHA256 指纹，一证一号查重用（审计 F-11）
     real_name_status TINYINT      NOT NULL DEFAULT 0,  -- 0 未认证 / 1 已认证 / 2 驳回
     real_name_time   DATETIME,
     create_time      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,

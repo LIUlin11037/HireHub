@@ -23,7 +23,9 @@ import java.time.Duration;
  * 安全与降级：
  * <ul>
  *   <li>API Key 走环境变量 {@code DASHSCOPE_API_KEY}，绝不进 Git（同 D-18）；</li>
- *   <li>调用失败 / 超时 / 无 Key → 降级为「原始关键词」查询，保证搜索不瘫。</li>
+ *   <li>调用失败 / 超时 / 无 Key → 降级为「原始关键词」查询，保证搜索不瘫；</li>
+ *   <li><b>输出白名单校验（审计 R-06 / D-29）</b>：city/education/experience 直接进 ES term 过滤，
+ *       提示词注入可让模型输出非候选值污染筛选条件——三个字段必须过候选集校验，非法值置 null。</li>
  * </ul>
  */
 @Slf4j
@@ -59,6 +61,27 @@ public class LlmSearchQueryParser implements SearchQueryParser {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10)).build();
+
+    // ---------------- 审计 R-06：LLM 输出白名单（与提示词候选值严格一致） ----------------
+
+    /** 学历候选值（与 SYSTEM_PROMPT 一致） */
+    private static final java.util.Set<String> EDUCATION_WHITELIST = java.util.Set.of(
+            "不限", "高中", "大专", "本科", "硕士", "博士");
+
+    /** 经验候选值（与 SYSTEM_PROMPT 一致） */
+    private static final java.util.Set<String> EXPERIENCE_WHITELIST = java.util.Set.of(
+            "应届", "1-3年", "3-5年", "5-10年", "10年以上");
+
+    /**
+     * 城市候选值：ES city 是 keyword 精确匹配，只放行平台支持的标准城市名（不带「市」）。
+     * 模型输出的同义改写（"杭州市"）或注入的任意串都被挡在这里。
+     */
+    private static final java.util.Set<String> CITY_WHITELIST = java.util.Set.of(
+            "北京", "上海", "广州", "深圳", "杭州", "南京", "苏州", "成都", "重庆", "武汉",
+            "西安", "天津", "长沙", "郑州", "合肥", "青岛", "济南", "大连", "宁波", "厦门",
+            "福州", "无锡", "佛山", "东莞", "珠海", "昆明", "贵阳", "南昌", "石家庄", "太原",
+            "哈尔滨", "长春", "沈阳", "兰州", "乌鲁木齐", "呼和浩特", "南宁", "海口", "西宁", "银川",
+            "拉萨", "香港", "澳门", "台北");
 
     public LlmSearchQueryParser(@Value("${DASHSCOPE_API_KEY:}") String apiKey, ObjectMapper objectMapper) {
         this.apiKey = apiKey;
@@ -100,11 +123,12 @@ public class LlmSearchQueryParser implements SearchQueryParser {
             String content = root.path("choices").path(0).path("message").path("content").asText();
             JsonNode j = objectMapper.readTree(content);
             intent.setKeyword(textOrNull(j, "keyword"));
-            intent.setCity(textOrNull(j, "city"));
             intent.setSalaryMin(intOrNull(j, "salaryMin"));
             intent.setSalaryMax(intOrNull(j, "salaryMax"));
-            intent.setEducation(textOrNull(j, "education"));
-            intent.setExperience(textOrNull(j, "experience"));
+            // 审计 R-06：进 ES term 过滤的字段必须过白名单，非法值（同义改写/提示词注入）置 null
+            intent.setCity(whitelist(textOrNull(j, "city"), CITY_WHITELIST, "city"));
+            intent.setEducation(whitelist(textOrNull(j, "education"), EDUCATION_WHITELIST, "education"));
+            intent.setExperience(whitelist(textOrNull(j, "experience"), EXPERIENCE_WHITELIST, "experience"));
             // ★ 成功必须留痕：否则"LLM 到底跑没跑"从外部完全看不出来 ——
             // 降级路径有 warn，成功路径却没有日志，于是"接口返回了结果"既可能是真调了模型，
             // 也可能是静默降级成了关键词搜索。可解释、可降级的前提是**可观测**。
@@ -120,6 +144,18 @@ public class LlmSearchQueryParser implements SearchQueryParser {
 
     private String textOrNull(JsonNode n, String field) {
         return (n.has(field) && !n.get(field).isNull()) ? n.get(field).asText() : null;
+    }
+
+    /** 白名单校验（审计 R-06）：值不在候选集内记 warn 并置 null，不让模型输出直接污染 ES 过滤条件 */
+    private String whitelist(String value, java.util.Set<String> candidates, String field) {
+        if (value == null) {
+            return null;
+        }
+        if (candidates.contains(value)) {
+            return value;
+        }
+        log.warn("[NL 搜索] LLM 输出的 {} 不在候选值内，已丢弃: {}", field, value);
+        return null;
     }
 
     private Integer intOrNull(JsonNode n, String field) {
