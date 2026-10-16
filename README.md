@@ -149,12 +149,3 @@ Elasticsearch 8.14（IK）· Sentinel 1.8.9 · MinIO · springdoc 2.8.17 · Micr
 | [项目上下文](docs/project_context.md) | 新会话快速恢复上下文用 |
 
 ---
-
-## 已知边界（有意不做，不是没做完）
-
-- **前端自研**（[D-40](docs/关键决策记录.md)）：栈 = Vue 3 + TS + Vite + Element Plus，
-  见[前端开发指南](docs/前端开发指南.md)（原 D-30 的"不做前端"已被 D-40 修订）
-- **不做**：SkyWalking（Q-04）、Canal（Q-02）、独立搜索服务（Q-01）、订单体系（Q-06）、
-  WebRTC 实时通话（D-11）、求职者强制实名（Q-09）
-- **外部依赖仍是打底实现**：企业工商核验为 Mock（可切阿里云市场 API，见 D-18）
-- **未做的生产化**：CI/CD、监控告警、高可用、HTTPS、密钥管理 —— 属"上线才需要"的范围
